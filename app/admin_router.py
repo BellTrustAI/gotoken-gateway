@@ -60,7 +60,7 @@ class CreateTokenRequest(BaseModel):
 def list_tokens(_: str = Depends(verify_api_key)) -> list[dict]:
     config = get_config()
     return [
-        {"name": t.name, "prefix": t.token[:8] + "..." + t.token[-4:], "created_at": t.created_at}
+        {"name": t.name, "token": t.token, "created_at": t.created_at}
         for t in config.api_tokens
     ]
 
