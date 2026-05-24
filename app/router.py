@@ -1,6 +1,8 @@
 import time
 import uuid
 
+from typing import Optional, Union
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
@@ -133,3 +135,82 @@ async def list_models_openai(_: str = Depends(verify_api_key)):
         if m.strip():
             data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "gemini"})
     return {"object": "list", "data": data}
+
+
+# ---- Anthropic Messages API-compatible endpoint ----
+
+class AnthropicContentBlock(BaseModel):
+    type: str
+    text: str = ""
+
+
+class AnthropicMessage(BaseModel):
+    role: str
+    content: Union[str, list[AnthropicContentBlock]]
+
+
+class AnthropicRequest(BaseModel):
+    model: str
+    max_tokens: int
+    messages: list[AnthropicMessage]
+    system: Union[str, list[dict], None] = None
+    temperature: float = 1.0
+
+
+def _anthropic_content_to_str(content: Union[str, list[AnthropicContentBlock]]) -> str:
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content:
+        if hasattr(block, 'text') and block.text:
+            parts.append(block.text)
+    return "\n".join(parts)
+
+
+@router.post("/v1/messages")
+async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api_key)):
+    provider_name = _detect_provider(request.model)
+
+    # Build messages list for internal ChatRequest
+    messages = []
+    for msg in request.messages:
+        content_str = _anthropic_content_to_str(msg.content)
+        messages.append(Message(role=msg.role, content=content_str))
+
+    # Prepend system prompt as a system message if provided
+    if request.system:
+        system_text = request.system if isinstance(request.system, str) else str(request.system)
+        if system_text.strip():
+            messages.insert(0, Message(role="system", content=system_text.strip()))
+
+    req = ChatRequest(
+        provider=provider_name,
+        model=request.model,
+        messages=messages,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        stream=False,
+    )
+    provider = _get_provider(provider_name)
+    try:
+        result = await provider.chat(req)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    return {
+        "id": "msg_" + uuid.uuid4().hex[:24],
+        "type": "message",
+        "role": "assistant",
+        "model": request.model,
+        "content": [{"type": "text", "text": result.content}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": result.usage.input_tokens if result.usage else 0,
+            "output_tokens": result.usage.output_tokens if result.usage else 0,
+        },
+    }

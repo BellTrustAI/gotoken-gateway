@@ -231,7 +231,7 @@
       <div class="section">
         <h3>API 接入说明</h3>
         <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-          Gateway 提供兼容 OpenAI API 格式的接口，支持 Chat Completions、Models List 和 Health Check。
+          Gateway 同时兼容 <strong>OpenAI API</strong> 和 <strong>Anthropic Messages API</strong> 格式，支持 Chat、Models List 和 Health Check。
         </p>
         <div style="margin-bottom:16px">
           <strong>Base URL</strong>
@@ -241,25 +241,40 @@
           <strong>认证方式</strong>
           <code style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px">Authorization: Bearer &lt;token&gt;</code>
         </div>
+
+        <h3 style="margin-top:20px;margin-bottom:12px">OpenAI 兼容接口</h3>
+
         <div style="margin-bottom:16px">
           <strong>获取模型列表</strong>
-          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl -H "Authorization: Bearer &lt;token&gt;" {base}/models</code>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl -H "Authorization: Bearer &lt;token&gt;" {base}/v1/models</code>
         </div>
         <div style="margin-bottom:16px">
           <strong>Chat Completions</strong>
-          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-all">curl -X POST {base}/chat/completions \
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-all">curl -X POST {base}/v1/chat/completions \
   -H "Authorization: Bearer &lt;token&gt;" \
   -H "Content-Type: application/json" \
-  -d '{"model":"&lt;model-id&gt;","messages":[{"role":"user","content":"hello"}]}'</code>
+  -d '{"model":"&lt;model-id&gt;","messages":[{"role":"user","content":"hello"}],"max_tokens":512}'</code>
         </div>
+
+        <h3 style="margin-top:20px;margin-bottom:12px">Anthropic Messages 兼容接口</h3>
+
+        <div style="margin-bottom:16px">
+          <strong>Messages</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-all">curl -X POST {base}/v1/messages \
+  -H "x-api-key: &lt;token&gt;" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"&lt;model-id&gt;","max_tokens":512,"messages":[{"role":"user","content":"hello"}]}'</code>
+        </div>
+
         <div style="margin-bottom:16px">
           <strong>健康检查（无需认证）</strong>
           <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl {base}/healthz</code>
         </div>
         <div>
-          <strong>One API 配置</strong>
+          <strong>One API / 上游渠道配置</strong>
           <p style="font-size:13px;color:var(--text-muted);margin-top:4px">
-            在 One API 中添加自定义渠道：类型选择 <strong>OpenAI</strong>，Base URL 填写上述地址，密钥填写创建的 API Token。
+            渠道类型选择 <strong>OpenAI</strong>（支持全部模型）或 <strong>Anthropic Claude</strong>（Claude 模型专用），Base URL 填写上述地址，密钥填写创建的 API Token。
           </p>
         </div>
       </div>
