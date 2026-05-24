@@ -74,6 +74,7 @@ Authorization: Bearer <GATEWAY_API_KEY>
 | 项目路径 | `/opt/gotoken-gateway` |
 | 域名 | `gogogotoken.cn` |
 | 网关端口 | `8789`（仅本地，不对外开放） |
+| 仓库 | `https://github.com/BellTrustAI/gotoken-gateway` |
 
 ### 初次部署
 
@@ -81,18 +82,16 @@ Authorization: Bearer <GATEWAY_API_KEY>
 # 1. SSH 登录
 ssh root@47.236.56.253
 
-# 2. 拉取代码到 /opt/gotoken-gateway
+# 2. 克隆仓库
+git clone git@github.com:BellTrustAI/gotoken-gateway.git /opt/gotoken-gateway
 
 # 3. 配置环境变量
 cd /opt/gotoken-gateway/deploy
 cp .env.example .env
 vim .env  # 填入 GATEWAY_API_KEY
 
-# 4. 启动
+# 4. 启动（docker-compose.yml 已配置自动连接 deploy_checkai_net）
 docker compose up -d --build
-
-# 5. 连接到 Caddy 所在网络（共享 80/443 反向代理）
-docker network connect deploy_checkai_net deploy-gateway-1
 ```
 
 ### Caddy 反向代理配置
@@ -111,16 +110,18 @@ gogogotoken.cn {
 ### 日常更新部署
 
 ```bash
-# 1. 上传修改的文件
+# === 方式 A：git pull（推荐） ===
+ssh root@47.236.56.253 "cd /opt/gotoken-gateway && git pull && cd deploy && docker compose up -d --build"
+
+# === 方式 B：本地 scp（无需服务器访问 GitHub） ===
 scp app/provider_config.py root@47.236.56.253:/opt/gotoken-gateway/app/
 scp app/auth.py root@47.236.56.253:/opt/gotoken-gateway/app/
 scp app/admin_router.py root@47.236.56.253:/opt/gotoken-gateway/app/
 scp app/static/gateway.html root@47.236.56.253:/opt/gotoken-gateway/app/static/
 
-# 2. 重建并启动
 ssh root@47.236.56.253 "cd /opt/gotoken-gateway/deploy && docker compose up -d --build"
 
-# 3. 验证
+# === 验证 ===
 curl -s -o /dev/null -w '%{http_code}' https://gogogotoken.cn/healthz
 # 期望: 200
 ```
