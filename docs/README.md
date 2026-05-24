@@ -13,11 +13,58 @@ docker compose up -d
 
 ## API
 
-### `POST /chat` — 统一聊天入口
+### 认证方式
+
+支持两种鉴权方式（等效）：
 
 ```
-Authorization: Bearer <GATEWAY_API_KEY>
+Authorization: Bearer <token>     # OpenAI 风格
+x-api-key: <token>                 # Anthropic 风格
 ```
+
+Token 可通过管理后台创建（管理密钥或 API Token 均可）。
+
+### `POST /v1/chat/completions` — OpenAI 兼容 Chat
+
+```json
+{
+  "model": "claude-haiku-4.5",
+  "messages": [{"role": "user", "content": "hello"}],
+  "max_tokens": 512,
+  "temperature": 0.7
+}
+```
+
+请求/响应格式与 OpenAI Chat Completions API 一致。
+Model 名自动匹配对应 provider，无需手动指定。
+
+### `POST /v1/messages` — Anthropic Messages 兼容
+
+```json
+{
+  "model": "claude-haiku-4.5",
+  "max_tokens": 512,
+  "messages": [{"role": "user", "content": "hello"}],
+  "system": "optional system prompt"
+}
+```
+
+请求/响应格式与 Anthropic Messages API 一致。
+支持 `x-api-key` 和 `Authorization: Bearer` 两种认证。
+
+### `GET /v1/models` — OpenAI 兼容模型列表
+
+### `GET /healthz` — 健康检查（无需认证）
+
+### 内部接口（需要 provider 参数）
+
+| 端点 | 说明 |
+|------|------|
+| `POST /chat` | 需指定 `provider` 字段 |
+| `GET /models?provider=bedrock` | 按 provider 列出模型 |
+
+<details>
+<summary>POST /chat 请求格式</summary>
 
 ```json
 {
@@ -33,19 +80,24 @@ Authorization: Bearer <GATEWAY_API_KEY>
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | provider | string | 是 | `bedrock` / `openai` / `gemini` |
-| model | string | 是 | 模型 ID，见下方模型清单 |
+| model | string | 是 | 模型 ID |
 | messages | array | 是 | 标准 chat messages |
 | max_tokens | int | 否 | 默认 512 |
 | temperature | float | 否 | 默认 0.7 |
-| stream | bool | 否 | 默认 false（暂未实现） |
+| stream | bool | 否 | 默认 false |
 
-### `GET /healthz` — 健康检查
+</details>
 
-### `GET /models?provider=bedrock` — 列出可用模型
+## One API / 上游渠道接入
 
-```
-Authorization: Bearer <GATEWAY_API_KEY>
-```
+在 One API 面板（`/panel/upstream`）中添加渠道：
+
+| 场景 | 渠道类型 | Base URL | 密钥 |
+|------|----------|----------|------|
+| Claude 模型 | **Anthropic Claude（14）** | `https://gogogotoken.cn` | API Token |
+| 其他模型 | **OpenAI（1）** | `https://gogogotoken.cn` | API Token |
+
+流程：One API 接到用户请求 → 根据渠道类型发 OpenAI/Anthropic 协议 → gotoken 根据 model 名自动匹配 provider → 转发到对应的 AI 后端。
 
 ## 管理后台
 
