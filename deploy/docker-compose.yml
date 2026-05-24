@@ -1,0 +1,20 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "127.0.0.1:8789:8789"
+    env_file:
+      - .env
+    volumes:
+      - ./config.json:/app/config.json
+    restart: unless-stopped
+    networks:
+      - default
+      - checkai_net
+
+networks:
+  checkai_net:
+    external: true
+    name: deploy_checkai_net

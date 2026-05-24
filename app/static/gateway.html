@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gotoken-gateway</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e1e4eb;
+    --text-muted: #8b8fa3;
+    --accent: #6c8aff;
+    --accent-hover: #8ba5ff;
+    --danger: #f44;
+    --green: #4caf88;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .container { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.5px; }
+  .header-controls { display: flex; align-items: center; gap: 10px; }
+  .health-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted);
+    display: inline-block; flex-shrink: 0;
+  }
+  .health-dot.ok { background: var(--green); }
+  .health-dot.err { background: var(--danger); }
+
+  input, button {
+    font-family: inherit; font-size: 14px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 8px 12px; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    cursor: pointer; background: var(--accent); color: #fff; border: none;
+    font-weight: 500; padding: 8px 20px;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-sm { padding: 5px 14px; font-size: 13px; }
+  .btn-danger { background: var(--danger); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; }
+  .tab {
+    padding: 8px 20px; border-radius: var(--radius); cursor: pointer;
+    background: transparent; color: var(--text-muted); border: 1px solid transparent;
+    font-size: 14px; font-weight: 500; transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--surface); color: var(--accent); border-color: var(--border); }
+
+  /* Form sections */
+  .section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+  }
+  .section h3 {
+    font-size: 15px; font-weight: 600; margin-bottom: 14px;
+    color: var(--text);
+  }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .field input { width: 100%; }
+  .field .hint { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+  /* Model list */
+  .model-row {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 8px;
+  }
+  .model-row input { flex: 1; }
+  .model-add { margin-top: 8px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 12px 20px;
+    border-radius: var(--radius); font-size: 14px; font-weight: 500;
+    z-index: 1000; animation: slideUp 0.3s ease; max-width: 400px;
+  }
+  .toast.success { background: var(--green); color: #fff; }
+  .toast.error { background: var(--danger); color: #fff; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Locked state */
+  .locked {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 50vh; gap: 16px;
+  }
+  .locked p { color: var(--text-muted); font-size: 15px; }
+  .locked input { width: 300px; text-align: center; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <div class="locked" id="lockScreen">
+    <h1>gotoken-gateway</h1>
+    <p>输入管理密码以管理网关</p>
+    <input type="password" id="apiKeyInput" placeholder="管理密码" autofocus>
+    <button onclick="unlock()">解锁</button>
+    <div id="lockError" style="color:var(--danger);font-size:14px;display:none"></div>
+  </div>
+
+  <div class="hidden" id="mainPanel">
+    <div class="header">
+      <h1>gotoken-gateway</h1>
+      <div class="header-controls">
+        <span class="health-dot" id="healthDot" title="Gateway health"></span>
+        <span style="font-size:13px;color:var(--text-muted)">gateway</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('bedrock')">AWS Bedrock</div>
+      <div class="tab" onclick="switchTab('openai')">OpenAI</div>
+      <div class="tab" onclick="switchTab('gemini')">Gemini</div>
+      <div class="tab" onclick="switchTab('tokens')">Tokens</div>
+      <div class="tab" onclick="switchTab('guide')">使用指南</div>
+    </div>
+
+    <!-- Bedrock Tab -->
+    <div id="tab-bedrock">
+      <div class="section">
+        <h3>AWS Credentials</h3>
+        <div class="field">
+          <label>Access Key ID</label>
+          <input type="text" id="bedrock-akid" placeholder="AKIA...">
+        </div>
+        <div class="field">
+          <label>Secret Access Key</label>
+          <input type="password" id="bedrock-secret" placeholder="••••••••">
+        </div>
+        <div class="field">
+          <label>Region</label>
+          <input type="text" id="bedrock-region" placeholder="us-west-2">
+        </div>
+      </div>
+      <div class="section">
+        <h3>Models (model-id → inference-profile-arn)</h3>
+        <div id="bedrock-models"></div>
+        <button class="btn-sm model-add" onclick="addBedrockModel()">+ Add Model</button>
+      </div>
+      <button onclick="saveBedrock()">Save Bedrock Config</button>
+    </div>
+
+    <!-- OpenAI Tab -->
+    <div id="tab-openai" class="hidden">
+      <div class="section">
+        <h3>API Credentials</h3>
+        <div class="field">
+          <label>API Key</label>
+          <input type="password" id="openai-key" placeholder="sk-...">
+        </div>
+        <div class="field">
+          <label>Base URL <span class="hint">(optional, leave blank for default)</span></label>
+          <input type="text" id="openai-base" placeholder="https://api.openai.com/v1">
+        </div>
+      </div>
+      <div class="section">
+        <h3>Allowed Models</h3>
+        <div id="openai-models"></div>
+        <button class="btn-sm model-add" onclick="addOpenAIModel()">+ Add Model</button>
+      </div>
+      <button onclick="saveOpenAI()">Save OpenAI Config</button>
+    </div>
+
+    <!-- Gemini Tab -->
+    <div id="tab-gemini" class="hidden">
+      <div class="section">
+        <h3>API Credentials</h3>
+        <div class="field">
+          <label>API Key</label>
+          <input type="password" id="gemini-key" placeholder="AIza...">
+        </div>
+      </div>
+      <div class="section">
+        <h3>Allowed Models</h3>
+        <div id="gemini-models"></div>
+        <button class="btn-sm model-add" onclick="addGeminiModel()">+ Add Model</button>
+      </div>
+      <button onclick="saveGemini()">Save Gemini Config</button>
+    </div>
+
+    <!-- Tokens Tab -->
+    <div id="tab-tokens" class="hidden">
+      <div class="section">
+        <h3>创建 API Token</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+          创建 token 供下游客户端（如 One API）使用。Token 仅创建时完整显示一次，请妥善保存。
+        </p>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="newTokenName" placeholder="Token 名称（如 one-api）" style="flex:1">
+          <button onclick="createToken()">创建 Token</button>
+        </div>
+        <div id="newTokenResult" style="margin-top:12px;display:none">
+          <div style="background:var(--bg);padding:12px;border-radius:var(--radius);font-family:monospace;font-size:13px;word-break:break-all" id="newTokenValue"></div>
+          <button class="btn-sm" style="margin-top:8px" onclick="copyNewToken()">复制 Token</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>已有 Tokens</h3>
+        <div id="tokensList" style="font-size:13px;color:var(--text-muted)">加载中...</div>
+      </div>
+    </div>
+
+    <!-- Guide Tab -->
+    <div id="tab-guide" class="hidden">
+      <div class="section">
+        <h3>API 接入说明</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+          Gateway 提供兼容 OpenAI API 格式的接口，支持 Chat Completions、Models List 和 Health Check。
+        </p>
+        <div style="margin-bottom:16px">
+          <strong>Base URL</strong>
+          <code style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px" id="guideBaseUrl">http://your-host:8789</code>
+        </div>
+        <div style="margin-bottom:16px">
+          <strong>认证方式</strong>
+          <code style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px">Authorization: Bearer &lt;token&gt;</code>
+        </div>
+        <div style="margin-bottom:16px">
+          <strong>获取模型列表</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl -H "Authorization: Bearer &lt;token&gt;" {base}/models</code>
+        </div>
+        <div style="margin-bottom:16px">
+          <strong>Chat Completions</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-all">curl -X POST {base}/chat/completions \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"&lt;model-id&gt;","messages":[{"role":"user","content":"hello"}]}'</code>
+        </div>
+        <div style="margin-bottom:16px">
+          <strong>健康检查（无需认证）</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl {base}/healthz</code>
+        </div>
+        <div>
+          <strong>One API 配置</strong>
+          <p style="font-size:13px;color:var(--text-muted);margin-top:4px">
+            在 One API 中添加自定义渠道：类型选择 <strong>OpenAI</strong>，Base URL 填写上述地址，密钥填写创建的 API Token。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+let apiKey = '';
+let config = null;
+
+// ---- Auth ----
+function unlock() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) return;
+  fetch('/admin/providers', { headers: { Authorization: 'Bearer ' + apiKey } })
+    .then(r => {
+      if (!r.ok) throw new Error('Invalid API key');
+      return r.json();
+    })
+    .then(cfg => {
+      config = cfg;
+      document.getElementById('lockScreen').classList.add('hidden');
+      document.getElementById('mainPanel').classList.remove('hidden');
+      document.getElementById('lockError').style.display = 'none';
+      renderAll();
+      checkHealth();
+    })
+    .catch(() => {
+      document.getElementById('lockError').style.display = 'block';
+      document.getElementById('lockError').textContent = '密码错误';
+    });
+}
+
+// ---- Tabs ----
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-"]').forEach(p => p.classList.add('hidden'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  if (name === 'tokens') loadTokens();
+  if (name === 'guide') {
+    const base = location.origin;
+    document.getElementById('guideBaseUrl').textContent = base;
+    document.querySelectorAll('.guide-code').forEach(el => {
+      el.textContent = el.textContent.replace(/\{base\}/g, base);
+    });
+  }
+}
+
+// ---- API helpers ----
+function authHeaders() {
+  return { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' };
+}
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ---- Bedrock ----
+function renderBedrockModels() {
+  const models = config.bedrock.models || {};
+  const container = document.getElementById('bedrock-models');
+  container.innerHTML = Object.entries(models).map(([id, arn]) =>
+    `<div class="model-row">
+      <input value="${esc(id)}" placeholder="model-id" onchange="updateBedrockModel('${esc(id)}', this.value, null)">
+      <input value="${esc(arn)}" placeholder="arn:aws:bedrock:..." style="flex:2" onchange="updateBedrockModel('${esc(id)}', null, this.value)">
+      <button class="btn-sm btn-danger" onclick="removeBedrockModel('${esc(id)}')">×</button>
+    </div>`
+  ).join('');
+}
+
+function addBedrockModel() {
+  config.bedrock.models = config.bedrock.models || {};
+  config.bedrock.models[''] = '';
+  renderBedrockModels();
+}
+
+function updateBedrockModel(oldId, newId, newArn) {
+  const models = config.bedrock.models;
+  const arn = newArn !== null ? newArn : models[oldId];
+  const id = newId !== null ? newId : oldId;
+  if (oldId !== id) delete models[oldId];
+  models[id] = arn;
+  if (newId !== null) renderBedrockModels();
+}
+
+function removeBedrockModel(id) {
+  delete config.bedrock.models[id];
+  renderBedrockModels();
+}
+
+function readBedrockForm() {
+  config.bedrock.aws_access_key_id = document.getElementById('bedrock-akid').value;
+  config.bedrock.aws_secret_access_key = document.getElementById('bedrock-secret').value;
+  config.bedrock.aws_region = document.getElementById('bedrock-region').value || 'us-west-2';
+  // Clean empty model entries
+  const cleaned = {};
+  Object.entries(config.bedrock.models || {}).forEach(([k, v]) => {
+    if (k.trim()) cleaned[k.trim()] = v.trim();
+  });
+  config.bedrock.models = cleaned;
+}
+
+function saveBedrock() {
+  readBedrockForm();
+  fetch('/admin/providers/bedrock', {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.bedrock)
+  })
+  .then(r => r.ok ? toast('Bedrock config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
+  .catch(() => toast('Network error', 'error'));
+}
+
+// ---- OpenAI ----
+function renderOpenAIModels() {
+  const models = config.openai.models || [];
+  const container = document.getElementById('openai-models');
+  container.innerHTML = models.map((m, i) =>
+    `<div class="model-row">
+      <input value="${esc(m)}" placeholder="gpt-5.5" onchange="config.openai.models[${i}]=this.value">
+      <button class="btn-sm btn-danger" onclick="config.openai.models.splice(${i},1);renderOpenAIModels()">×</button>
+    </div>`
+  ).join('');
+}
+
+function addOpenAIModel() {
+  config.openai.models = config.openai.models || [];
+  config.openai.models.push('');
+  renderOpenAIModels();
+}
+
+function saveOpenAI() {
+  config.openai.api_key = document.getElementById('openai-key').value;
+  config.openai.base_url = document.getElementById('openai-base').value;
+  config.openai.models = (config.openai.models || []).filter(m => m.trim());
+  fetch('/admin/providers/openai', {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.openai)
+  })
+  .then(r => r.ok ? toast('OpenAI config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
+  .catch(() => toast('Network error', 'error'));
+}
+
+// ---- Gemini ----
+function renderGeminiModels() {
+  const models = config.gemini.models || [];
+  const container = document.getElementById('gemini-models');
+  container.innerHTML = models.map((m, i) =>
+    `<div class="model-row">
+      <input value="${esc(m)}" placeholder="gemini-3.1-pro-preview" onchange="config.gemini.models[${i}]=this.value">
+      <button class="btn-sm btn-danger" onclick="config.gemini.models.splice(${i},1);renderGeminiModels()">×</button>
+    </div>`
+  ).join('');
+}
+
+function addGeminiModel() {
+  config.gemini.models = config.gemini.models || [];
+  config.gemini.models.push('');
+  renderGeminiModels();
+}
+
+function saveGemini() {
+  config.gemini.api_key = document.getElementById('gemini-key').value;
+  config.gemini.models = (config.gemini.models || []).filter(m => m.trim());
+  fetch('/admin/providers/gemini', {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.gemini)
+  })
+  .then(r => r.ok ? toast('Gemini config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
+  .catch(() => toast('Network error', 'error'));
+}
+
+let newTokenValue = '';
+
+// ---- Tokens ----
+function loadTokens() {
+  fetch('/admin/tokens', { headers: { Authorization: 'Bearer ' + apiKey } })
+    .then(r => r.json())
+    .then(tokens => {
+      const container = document.getElementById('tokensList');
+      if (!tokens.length) {
+        container.innerHTML = '暂无 token，请在上面创建一个。';
+        return;
+      }
+      container.innerHTML = tokens.map(t =>
+        `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-weight:500">${esc(t.name)}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${esc(t.prefix)} · ${esc(t.created_at)}</div>
+          </div>
+          <button class="btn-sm btn-danger" onclick="deleteToken('${esc(t.name)}')">撤销</button>
+        </div>`
+      ).join('');
+    })
+    .catch(() => {
+      document.getElementById('tokensList').innerHTML = '加载失败';
+    });
+}
+
+function createToken() {
+  const name = document.getElementById('newTokenName').value.trim();
+  if (!name) return toast('请输入 token 名称', 'error');
+  fetch('/admin/tokens', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ name })
+  })
+  .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.detail || '创建失败'); }))
+  .then(data => {
+    newTokenValue = data.token;
+    document.getElementById('newTokenValue').textContent = data.token;
+    document.getElementById('newTokenResult').style.display = 'block';
+    document.getElementById('newTokenName').value = '';
+    toast('Token 创建成功', 'success');
+    loadTokens();
+  })
+  .catch(e => toast(e.message, 'error'));
+}
+
+function copyNewToken() {
+  navigator.clipboard.writeText(newTokenValue).then(() => toast('已复制到剪贴板', 'success'));
+}
+
+function deleteToken(name) {
+  if (!confirm('确认撤销 token "' + name + '"？此操作不可恢复。')) return;
+  fetch('/admin/tokens/' + encodeURIComponent(name), {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + apiKey }
+  })
+  .then(r => {
+    if (!r.ok) return r.json().then(d => { throw new Error(d.detail || '撤销失败'); });
+    toast('Token 已撤销', 'success');
+    loadTokens();
+  })
+  .catch(e => toast(e.message, 'error'));
+}
+
+// ---- Health check ----
+function checkHealth() {
+  fetch('/healthz')
+    .then(r => {
+      const dot = document.getElementById('healthDot');
+      dot.className = 'health-dot ' + (r.ok ? 'ok' : 'err');
+      dot.title = r.ok ? 'Gateway healthy' : 'Gateway unhealthy';
+    })
+    .catch(() => {
+      const dot = document.getElementById('healthDot');
+      dot.className = 'health-dot err';
+      dot.title = 'Gateway unreachable';
+    });
+}
+
+// ---- Init ----
+function renderAll() {
+  document.getElementById('bedrock-akid').value = config.bedrock.aws_access_key_id || '';
+  document.getElementById('bedrock-secret').value = config.bedrock.aws_secret_access_key || '';
+  document.getElementById('bedrock-region').value = config.bedrock.aws_region || 'us-west-2';
+  renderBedrockModels();
+
+  document.getElementById('openai-key').value = config.openai.api_key || '';
+  document.getElementById('openai-base').value = config.openai.base_url || '';
+  renderOpenAIModels();
+
+  document.getElementById('gemini-key').value = config.gemini.api_key || '';
+  renderGeminiModels();
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Enter key to unlock
+document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') unlock();
+});
+
+// Periodic health check
+setInterval(checkHealth, 30000);
+</script>
+
+</body>
+</html>
