@@ -1,7 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+import time
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from app.auth import verify_api_key
-from app.models import ChatRequest, ChatResponse, HealthResponse, ModelsResponse
+from app.models import ChatRequest, ChatResponse, HealthResponse, Message, ModelsResponse
+from app.provider_config import get_config
 from app.providers.bedrock import BedrockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
@@ -21,6 +26,21 @@ def _get_provider(provider_name: str):
     return _providers[provider_name]
 
 
+def _detect_provider(model: str) -> str:
+    """Auto-detect provider name from model ID."""
+    config = get_config()
+    for m in config.openai.models:
+        if m.strip().lower() == model.lower():
+            return "openai"
+    for m in config.gemini.models:
+        if m.strip().lower() == model.lower():
+            return "gemini"
+    for m_id in config.bedrock.models:
+        if m_id.strip().lower() == model.lower():
+            return "bedrock"
+    raise HTTPException(status_code=400, detail=f"Model '{model}' not found in any provider config")
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, _: str = Depends(verify_api_key)) -> ChatResponse:
     provider = _get_provider(request.provider)
@@ -34,12 +54,82 @@ async def chat(request: ChatRequest, _: str = Depends(verify_api_key)) -> ChatRe
         raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
 
-@router.get("/healthz", response_model=HealthResponse)
-async def healthz() -> HealthResponse:
-    return HealthResponse(status="ok")
+@router.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
 
 
-@router.get("/models", response_model=ModelsResponse)
-async def list_models(provider: str = "bedrock", _: str = Depends(verify_api_key)) -> ModelsResponse:
+@router.get("/models")
+async def list_models(provider: str = "bedrock", _: str = Depends(verify_api_key)):
     p = _get_provider(provider)
-    return ModelsResponse(provider=provider, models=p.list_models())
+    return {"provider": provider, "models": p.list_models()}
+
+
+# ---- OpenAI-compatible endpoints (for new-api / One API upstream) ----
+
+class OAIMessage(BaseModel):
+    role: str
+    content: str
+
+
+class OAIRequest(BaseModel):
+    model: str
+    messages: list[OAIMessage]
+    max_tokens: int = 512
+    temperature: float = 0.7
+    stream: bool = False
+
+
+@router.post("/v1/chat/completions")
+async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)):
+    provider_name = _detect_provider(request.model)
+    req = ChatRequest(
+        provider=provider_name,
+        model=request.model,
+        messages=[Message(role=m.role, content=m.content) for m in request.messages],
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        stream=request.stream,
+    )
+    provider = _get_provider(provider_name)
+    try:
+        result = await provider.chat(req)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    return {
+        "id": "chatcmpl-" + uuid.uuid4().hex[:24],
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": result.content},
+            "finish_reason": "stop",
+        }],
+        "usage": {
+            "prompt_tokens": result.usage.input_tokens if result.usage else 0,
+            "completion_tokens": result.usage.output_tokens if result.usage else 0,
+            "total_tokens": (result.usage.input_tokens + result.usage.output_tokens) if result.usage else 0,
+        },
+    }
+
+
+@router.get("/v1/models")
+async def list_models_openai(_: str = Depends(verify_api_key)):
+    config = get_config()
+    data = []
+    now = int(time.time())
+    for m_id in config.bedrock.models:
+        data.append({"id": m_id, "object": "model", "created": now, "owned_by": "bedrock"})
+    for m in config.openai.models:
+        if m.strip():
+            data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "openai"})
+    for m in config.gemini.models:
+        if m.strip():
+            data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "gemini"})
+    return {"object": "list", "data": data}
