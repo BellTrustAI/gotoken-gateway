@@ -1,6 +1,6 @@
+import logging
 import time
 import uuid
-
 from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,6 +12,8 @@ from app.provider_config import get_config
 from app.providers.bedrock import BedrockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -53,6 +55,7 @@ async def chat(request: ChatRequest, _: str = Depends(verify_api_key)) -> ChatRe
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.exception("Provider error for model=%s", request.model if hasattr(request, 'model') else "unknown")
         raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
 
@@ -101,6 +104,7 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.exception("Provider error for model=%s", request.model if hasattr(request, 'model') else "unknown")
         raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
     return {
@@ -199,6 +203,7 @@ async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.exception("Provider error for model=%s", request.model if hasattr(request, 'model') else "unknown")
         raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
     return {

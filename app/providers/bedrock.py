@@ -42,7 +42,7 @@ class BedrockProvider:
         }
 
         if system_messages:
-            body["system"] = [m.content for m in system_messages]
+            body["system"] = [{"type": "text", "text": m.content} for m in system_messages]
 
         if request.temperature > 0:
             body["temperature"] = request.temperature
