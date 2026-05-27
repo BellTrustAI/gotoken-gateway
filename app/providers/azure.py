@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 _AZURE_AD_SCOPE = "https://ai.azure.com/.default"
 
-# Models that require Entra ID (not compatible with API Key)
+# Models that need Entra ID or special auth — API Key returns "unsupported operation"
 _ENTRA_REQUIRED_MODELS = {"gpt-5.4-pro", "gpt-5.2-codex", "gpt-5.3-codex"}
 
 
