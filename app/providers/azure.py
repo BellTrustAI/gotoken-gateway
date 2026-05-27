@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 _AZURE_AD_SCOPE = "https://ai.azure.com/.default"
 
+# Models that only support the Responses API (not Chat Completions)
+_RESPONSES_ONLY_MODELS = {"gpt-5.4-pro", "gpt-5.2-codex", "gpt-5.3-codex"}
+
 
 class AzureFoundryProvider:
     def __init__(self) -> None:
@@ -58,6 +61,10 @@ class AzureFoundryProvider:
             available = ", ".join(self._models)
             raise ValueError(f"Unknown Azure model '{request.model}'. Available: {available}")
 
+        # Auto-route to Responses API for models that don't support Chat Completions
+        if request.model.lower() in _RESPONSES_ONLY_MODELS:
+            return await self._chat_via_responses(request)
+
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
         is_codex = "codex" in request.model.lower()
@@ -90,6 +97,27 @@ class AzureFoundryProvider:
                 output_tokens=response.usage.completion_tokens if response.usage else 0,
             ),
         )
+
+    async def _chat_via_responses(self, request: ChatRequest) -> ChatResponse:
+        """Convert a ChatRequest to a Responses API call for models that need it."""
+        parts = []
+        for m in request.messages:
+            if m.role == "system":
+                parts.append(f"System: {m.content}")
+            elif m.role == "user":
+                parts.append(f"User: {m.content}")
+            elif m.role == "assistant":
+                parts.append(f"Assistant: {m.content}")
+        input_text = "\n\n".join(parts)
+
+        resp_req = ResponseRequest(
+            provider="azure",
+            model=request.model,
+            input=input_text,
+            max_output_tokens=request.max_completion_tokens or request.max_tokens,
+            reasoning_effort=request.reasoning_effort,
+        )
+        return await self.responses(resp_req)
 
     async def responses(self, request: ResponseRequest) -> ChatResponse:
         self._ensure_clients()

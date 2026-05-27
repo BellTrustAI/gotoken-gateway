@@ -185,31 +185,9 @@
     <div id="tab-azure" class="hidden">
       <div class="section">
         <h3>Authentication</h3>
-        <div class="field" style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-          <label style="margin-bottom:0;cursor:pointer">
-            <input type="checkbox" id="azure-entraid" onchange="toggleAzureAuth()" style="width:auto;margin-right:6px">
-            使用 Entra ID 认证（gpt-5.4-pro / codex 等模型需要）
-          </label>
-        </div>
-        <div id="azure-apikey-fields">
-          <div class="field">
-            <label>API Key</label>
-            <input type="password" id="azure-key" placeholder="Azure OpenAI API Key">
-          </div>
-        </div>
-        <div id="azure-entraid-fields" class="hidden">
-          <div class="field">
-            <label>Tenant ID (目录/租户 ID)</label>
-            <input type="text" id="azure-tenant" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-          </div>
-          <div class="field">
-            <label>Client ID (应用程序/客户端 ID)</label>
-            <input type="text" id="azure-clientid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-          </div>
-          <div class="field">
-            <label>Client Secret (客户端密码)</label>
-            <input type="password" id="azure-secret" placeholder="客户端密码 value">
-          </div>
+        <div class="field">
+          <label>API Key</label>
+          <input type="password" id="azure-key" placeholder="Azure OpenAI API Key">
         </div>
         <div class="field">
           <label>Endpoint URL</label>
@@ -219,7 +197,7 @@
       <div class="section">
         <h3>Allowed Models</h3>
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
-          gpt-5.4-pro / codex 模型通过 /v1/responses 接口调用
+          所有模型统一通过 /v1/chat/completions 调用，内部自动路由
         </p>
         <div id="azure-models"></div>
         <button class="btn-sm model-add" onclick="addAzureModel()">+ Add Model</button>
@@ -448,12 +426,6 @@ function saveGemini() {
 }
 
 // ---- Azure AI Foundry ----
-function toggleAzureAuth() {
-  const useEntra = document.getElementById('azure-entraid').checked;
-  document.getElementById('azure-apikey-fields').classList.toggle('hidden', useEntra);
-  document.getElementById('azure-entraid-fields').classList.toggle('hidden', !useEntra);
-}
-
 function renderAzureModels() {
   const models = config.azure.models || [];
   const container = document.getElementById('azure-models');
@@ -472,14 +444,7 @@ function addAzureModel() {
 }
 
 function saveAzure() {
-  config.azure.use_entra_id = document.getElementById('azure-entraid').checked;
-  if (config.azure.use_entra_id) {
-    config.azure.entra_tenant_id = document.getElementById('azure-tenant').value;
-    config.azure.entra_client_id = document.getElementById('azure-clientid').value;
-    config.azure.entra_client_secret = document.getElementById('azure-secret').value;
-  } else {
-    config.azure.api_key = document.getElementById('azure-key').value;
-  }
+  config.azure.api_key = document.getElementById('azure-key').value;
   config.azure.endpoint = document.getElementById('azure-endpoint').value;
   config.azure.models = (config.azure.models || []).map(m => m.trim()).filter(m => m);
   fetch('/admin/providers/azure', {
@@ -598,13 +563,8 @@ function renderAll() {
   document.getElementById('gemini-key').value = config.gemini.api_key || '';
   renderGeminiModels();
 
-  document.getElementById('azure-entraid').checked = config.azure.use_entra_id || false;
   document.getElementById('azure-key').value = config.azure.api_key || '';
-  document.getElementById('azure-tenant').value = config.azure.entra_tenant_id || '';
-  document.getElementById('azure-clientid').value = config.azure.entra_client_id || '';
-  document.getElementById('azure-secret').value = config.azure.entra_client_secret || '';
   document.getElementById('azure-endpoint').value = config.azure.endpoint || '';
-  toggleAzureAuth();
   renderAzureModels();
 }
 
