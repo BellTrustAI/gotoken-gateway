@@ -11,18 +11,26 @@ logger = logging.getLogger(__name__)
 
 class AzureFoundryProvider:
     def __init__(self) -> None:
+        self._client = None
+        self._models: list[str] = []
+
+    def _ensure_client(self):
+        if self._client is not None:
+            return
         cfg = get_config().azure
+        self._models = cfg.models
         self._client = AzureOpenAI(
             api_key=cfg.api_key,
             api_version=cfg.api_version,
             azure_endpoint=cfg.endpoint,
         )
-        self._models = cfg.models
 
     def list_models(self) -> list[str]:
+        self._ensure_client()
         return list(self._models)
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
+        self._ensure_client()
         if request.model not in self._models:
             available = ", ".join(self._models)
             raise ValueError(f"Unknown Azure model '{request.model}'. Available: {available}")
