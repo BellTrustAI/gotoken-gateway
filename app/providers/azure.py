@@ -9,7 +9,7 @@ from app.provider_config import get_config
 
 logger = logging.getLogger(__name__)
 
-_AZURE_AD_SCOPE = "https://cognitiveservices.azure.com/.default"
+_AZURE_AD_SCOPE = "https://ai.azure.com/.default"
 
 
 class AzureFoundryProvider:
