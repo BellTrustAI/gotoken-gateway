@@ -1,12 +1,15 @@
 import asyncio
 import logging
 
-from openai import AzureOpenAI
+from azure.identity import ClientSecretCredential, get_bearer_token_provider
+from openai import OpenAI
 
 from app.models import ChatRequest, ChatResponse, Usage
 from app.provider_config import get_config
 
 logger = logging.getLogger(__name__)
+
+_AZURE_AD_SCOPE = "https://cognitiveservices.azure.com/.default"
 
 
 class AzureFoundryProvider:
@@ -15,15 +18,27 @@ class AzureFoundryProvider:
         self._models: list[str] = []
 
     def _ensure_client(self):
-        if self._client is not None:
-            return
         cfg = get_config().azure
-        self._models = cfg.models
-        self._client = AzureOpenAI(
-            api_key=cfg.api_key,
-            api_version=cfg.api_version,
-            azure_endpoint=cfg.endpoint,
-        )
+        self._models = [m.strip() for m in cfg.models if m.strip()]
+
+        if cfg.use_entra_id and cfg.entra_tenant_id:
+            credential = ClientSecretCredential(
+                tenant_id=cfg.entra_tenant_id,
+                client_id=cfg.entra_client_id,
+                client_secret=cfg.entra_client_secret,
+            )
+            token_provider = get_bearer_token_provider(
+                credential, _AZURE_AD_SCOPE
+            )
+            self._client = OpenAI(
+                api_key=token_provider,
+                base_url=cfg.endpoint,
+            )
+        else:
+            self._client = OpenAI(
+                api_key=cfg.api_key,
+                base_url=cfg.endpoint,
+            )
 
     def list_models(self) -> list[str]:
         self._ensure_client()
@@ -42,15 +57,14 @@ class AzureFoundryProvider:
         kwargs: dict = {
             "model": request.model,
             "messages": messages,
+            "max_completion_tokens": request.max_completion_tokens or request.max_tokens,
         }
 
         if is_codex:
-            # reasoning models use max_completion_tokens, no temperature support
-            kwargs["max_completion_tokens"] = request.max_completion_tokens or request.max_tokens
+            # reasoning models: no temperature, support reasoning_effort
             if request.reasoning_effort:
                 kwargs["reasoning_effort"] = request.reasoning_effort
         else:
-            kwargs["max_tokens"] = request.max_tokens
             if request.temperature > 0:
                 kwargs["temperature"] = request.temperature
 

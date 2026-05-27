@@ -40,6 +40,10 @@ class AzureConfig(BaseModel):
     endpoint: str = ""
     api_version: str = "2025-01-01-preview"
     models: list[str] = []
+    use_entra_id: bool = False
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: str = ""
 
 
 class ApiToken(BaseModel):
