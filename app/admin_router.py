@@ -17,6 +17,7 @@ from app.provider_config import (
     reload_config,
     save_config,
 )
+from app.stats import get_collector
 
 admin = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -99,3 +100,8 @@ def delete_token(name: str, _: str = Depends(verify_api_key)) -> dict:
             reload_config()
             return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Token not found")
+
+
+@admin.get("/stats")
+def get_stats(_: str = Depends(verify_api_key)) -> dict:
+    return get_collector().snapshot()

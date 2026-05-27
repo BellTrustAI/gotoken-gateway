@@ -136,8 +136,11 @@ class GeminiProvider:
 
         text_parts = []
         images = []
-        if response.candidates and response.candidates[0].content:
-            for part in response.candidates[0].content.parts:
+        # Iterate all candidates and parts to capture text/images
+        for candidate in (response.candidates or []):
+            if not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
                 if part.text:
                     text_parts.append(part.text)
                 if hasattr(part, "inline_data") and part.inline_data:
@@ -145,8 +148,11 @@ class GeminiProvider:
                         mime_type=part.inline_data.mime_type,
                         data=base64.b64encode(part.inline_data.data).decode(),
                     ))
+                # google-genai SDK may put thinking in part.thought (bool + text)
+                if hasattr(part, "thought") and part.thought:
+                    continue  # skip thought-only parts, they are internal reasoning
 
-        content = "\n".join(text_parts) if text_parts else ""
+        content = "\n".join(text_parts) if text_parts else (response.text or "")
 
         usage = None
         if response.usage_metadata:

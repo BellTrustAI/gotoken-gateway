@@ -1,9 +1,11 @@
+import json
 import logging
 import time
 import uuid
 from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.auth import verify_api_key
@@ -13,6 +15,7 @@ from app.providers.azure import AzureFoundryProvider
 from app.providers.bedrock import BedrockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
+from app.stats import get_collector
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +53,23 @@ def _detect_provider(model: str) -> str:
     raise HTTPException(status_code=400, detail=f"Model '{model}' not found in any provider config")
 
 
+def _record_stats(result, provider_name: str, model: str):
+    stats = get_collector()
+    stats.record(
+        provider=provider_name,
+        model=model,
+        input_tokens=result.usage.input_tokens if result.usage else 0,
+        output_tokens=result.usage.output_tokens if result.usage else 0,
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, _: str = Depends(verify_api_key)) -> ChatResponse:
     provider = _get_provider(request.provider)
     try:
-        return await provider.chat(request)
+        result = await provider.chat(request)
+        _record_stats(result, request.provider, request.model)
+        return result
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except ValueError as e:
@@ -115,6 +130,7 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
     provider = _get_provider(provider_name)
     try:
         result = await provider.chat(req)
+        _record_stats(result, provider_name, request.model)
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except ValueError as e:
@@ -171,6 +187,131 @@ async def list_models_openai(_: str = Depends(verify_api_key)):
         if m.strip():
             data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "azure"})
     return {"object": "list", "data": data}
+
+
+# ---- Gemini native API endpoints (for One API Gemini channel) ----
+
+class GeminiNativeRequest(BaseModel):
+    contents: list[dict] = []
+    systemInstruction: dict | None = None
+    generationConfig: dict | None = None
+
+
+def _gemini_response(result: ChatResponse, model: str, finish_reason: str = "STOP") -> dict:
+    """Convert internal ChatResponse to Gemini native response format."""
+    parts = []
+    if result.content:
+        parts.append({"text": result.content})
+    if result.images:
+        for img in result.images:
+            parts.append({
+                "inlineData": {"mimeType": img.mime_type, "data": img.data}
+            })
+    return {
+        "candidates": [{
+            "content": {"role": "model", "parts": parts},
+            "finishReason": finish_reason,
+        }],
+        "usageMetadata": {
+            "promptTokenCount": result.usage.input_tokens if result.usage else 0,
+            "candidatesTokenCount": result.usage.output_tokens if result.usage else 0,
+            "totalTokenCount": (result.usage.input_tokens + result.usage.output_tokens) if result.usage else 0,
+        },
+    }
+
+
+def _build_gemini_messages(request: GeminiNativeRequest) -> list[Message]:
+    """Build internal Message list from Gemini native request contents."""
+    messages = []
+    if request.systemInstruction:
+        parts = request.systemInstruction.get("parts", [])
+        sys_text = " ".join(p.get("text", "") for p in parts if p.get("text"))
+        if sys_text.strip():
+            messages.append(Message(role="system", content=sys_text.strip()))
+
+    for c in request.contents:
+        role = c.get("role", "user")
+        parts = c.get("parts", [])
+        content_parts = []
+        for p in parts:
+            if "text" in p:
+                content_parts.append({"type": "text", "text": p["text"]})
+            elif "inlineData" in p:
+                inline = p["inlineData"]
+                mime = inline.get("mimeType", "image/png")
+                data = inline.get("data", "")
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{data}"}
+                })
+        if content_parts:
+            messages.append(Message(role=role, content=[ContentPart(**cp) for cp in content_parts]))
+        elif parts and "text" in parts[0]:
+            messages.append(Message(role=role, content=parts[0]["text"]))
+        else:
+            messages.append(Message(role=role, content=""))
+    return messages
+
+
+@router.post("/v1beta/models/{model_path:path}")
+async def gemini_generate_content(model_path: str, request: GeminiNativeRequest, _: str = Depends(verify_api_key)):
+    is_stream = model_path.endswith(":streamGenerateContent")
+    if is_stream:
+        model = model_path.rsplit(":streamGenerateContent", 1)[0]
+    elif model_path.endswith(":generateContent"):
+        model = model_path.rsplit(":generateContent", 1)[0]
+    else:
+        raise HTTPException(status_code=404, detail=f"Unknown action for model path: {model_path}")
+
+    provider_name = _detect_provider(model)
+    messages = _build_gemini_messages(request)
+    gc = request.generationConfig or {}
+    req = ChatRequest(
+        provider=provider_name,
+        model=model,
+        messages=messages,
+        max_tokens=gc.get("maxOutputTokens", 512),
+        temperature=gc.get("temperature", 0.7),
+    )
+    provider = _get_provider(provider_name)
+
+    async def _do_chat() -> ChatResponse:
+        try:
+            result = await provider.chat(req)
+            _record_stats(result, provider_name, model)
+            return result
+        except NotImplementedError as e:
+            raise HTTPException(status_code=501, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception("Provider error for model=%s", model)
+            raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    if is_stream:
+        async def event_stream():
+            result = await _do_chat()
+            resp = _gemini_response(result, model)
+            yield f"data: {json.dumps(resp)}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+    else:
+        result = await _do_chat()
+        return _gemini_response(result, model)
+
+
+@router.get("/v1beta/models")
+async def list_models_gemini(_: str = Depends(verify_api_key)):
+    config = get_config()
+    models_list = []
+    for m in config.gemini.models:
+        if m.strip():
+            models_list.append({
+                "name": f"models/{m.strip()}",
+                "displayName": m.strip(),
+                "supportedGenerationMethods": ["generateContent", "streamGenerateContent"],
+            })
+    return {"models": models_list}
 
 
 # ---- Anthropic Messages API-compatible endpoint ----
@@ -230,6 +371,7 @@ async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api
     provider = _get_provider(provider_name)
     try:
         result = await provider.chat(req)
+        _record_stats(result, provider_name, request.model)
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except ValueError as e:

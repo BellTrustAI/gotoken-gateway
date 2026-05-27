@@ -143,6 +143,7 @@
       <div class="tab" onclick="switchTab('gemini')">Gemini</div>
       <div class="tab" onclick="switchTab('tokens')">Tokens</div>
       <div class="tab" onclick="switchTab('guide')">使用指南</div>
+      <div class="tab" onclick="switchTab('monitor')">监控</div>
     </div>
 
     <!-- Bedrock Tab -->
@@ -250,7 +251,7 @@
       <div class="section">
         <h3>API 接入说明</h3>
         <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-          Gateway 同时兼容 <strong>OpenAI API</strong> 和 <strong>Anthropic Messages API</strong> 格式，支持 Chat、Models List 和 Health Check。
+          Gateway 兼容 <strong>OpenAI</strong>、<strong>Anthropic Messages</strong> 和 <strong>Gemini</strong> 三种原生 API 格式。
         </p>
         <div style="margin-bottom:16px">
           <strong>Base URL</strong>
@@ -261,10 +262,10 @@
           <code style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px">Authorization: Bearer &lt;token&gt;</code>
         </div>
 
-        <h3 style="margin-top:20px;margin-bottom:12px">OpenAI 兼容接口</h3>
+        <h3 style="margin-top:20px;margin-bottom:12px">OpenAI 兼容接口（推荐，通用）</h3>
 
         <div style="margin-bottom:16px">
-          <strong>获取模型列表</strong>
+          <strong>模型列表</strong>
           <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl -H "Authorization: Bearer &lt;token&gt;" {base}/v1/models</code>
         </div>
         <div style="margin-bottom:16px">
@@ -275,7 +276,7 @@
   -d '{"model":"&lt;model-id&gt;","messages":[{"role":"user","content":"hello"}],"max_tokens":512}'</code>
         </div>
 
-        <h3 style="margin-top:20px;margin-bottom:12px">Anthropic Messages 兼容接口</h3>
+        <h3 style="margin-top:20px;margin-bottom:12px">Anthropic Messages API</h3>
 
         <div style="margin-bottom:16px">
           <strong>Messages</strong>
@@ -286,16 +287,62 @@
   -d '{"model":"&lt;model-id&gt;","max_tokens":512,"messages":[{"role":"user","content":"hello"}]}'</code>
         </div>
 
+        <h3 style="margin-top:20px;margin-bottom:12px">Gemini 原生 API</h3>
+
+        <div style="margin-bottom:16px">
+          <strong>模型列表</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl -H "Authorization: Bearer &lt;token&gt;" {base}/v1beta/models</code>
+        </div>
+        <div style="margin-bottom:16px">
+          <strong>Generate Content</strong>
+          <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-all">curl -X POST {base}/v1beta/models/&lt;model-id&gt;:generateContent \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{"maxOutputTokens":512}}'</code>
+        </div>
+
         <div style="margin-bottom:16px">
           <strong>健康检查（无需认证）</strong>
           <code class="guide-code" style="display:block;background:var(--bg);padding:8px 12px;border-radius:var(--radius);margin-top:4px;font-size:13px;word-break:break-all">curl {base}/healthz</code>
         </div>
         <div>
           <strong>One API / 上游渠道配置</strong>
-          <p style="font-size:13px;color:var(--text-muted);margin-top:4px">
-            渠道类型选择 <strong>OpenAI</strong>（支持全部模型）或 <strong>Anthropic Claude</strong>（Claude 模型专用），Base URL 填写上述地址，密钥填写创建的 API Token。
-          </p>
+          <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
+            <tr style="color:var(--text-muted)">
+              <td style="padding:4px 8px">场景</td>
+              <td style="padding:4px 8px">渠道类型</td>
+              <td style="padding:4px 8px">Base URL</td>
+              <td style="padding:4px 8px">密钥</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 8px">通用（全部模型）</td>
+              <td style="padding:4px 8px;color:var(--accent)">OpenAI</td>
+              <td style="padding:4px 8px;font-family:monospace;font-size:12px" class="guide-base">https://gogogoai.hk</td>
+              <td style="padding:4px 8px;font-size:12px">创建的 Token</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 8px">Claude 模型</td>
+              <td style="padding:4px 8px;color:var(--accent)">Anthropic Claude</td>
+              <td style="padding:4px 8px;font-family:monospace;font-size:12px" class="guide-base">https://gogogoai.hk</td>
+              <td style="padding:4px 8px;font-size:12px">创建的 Token</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 8px">Gemini 模型</td>
+              <td style="padding:4px 8px;color:var(--accent)">Gemini</td>
+              <td style="padding:4px 8px;font-family:monospace;font-size:12px" class="guide-base">https://gogogoai.hk</td>
+              <td style="padding:4px 8px;font-size:12px">创建的 Token</td>
+            </tr>
+          </table>
         </div>
+      </div>
+    </div>
+
+    <!-- Monitor Tab -->
+    <div id="tab-monitor" class="hidden">
+      <div class="section">
+        <h3>Provider 调用统计</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">内存计数，重启清零。每 10 秒自动刷新。</p>
+        <div id="monitorContent" style="font-size:13px;color:var(--text-muted)">加载中...</div>
       </div>
     </div>
   </div>
@@ -337,6 +384,7 @@ function switchTab(name) {
   document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
   document.getElementById('tab-' + name).classList.remove('hidden');
   if (name === 'tokens') loadTokens();
+  if (name === 'monitor') loadMonitor();
   if (name === 'guide') {
     const base = location.origin;
     document.getElementById('guideBaseUrl').textContent = base;
@@ -556,6 +604,52 @@ function deleteToken(name) {
   .catch(e => toast(e.message, 'error'));
 }
 
+// ---- Monitor ----
+function loadMonitor() {
+  fetch('/admin/stats', { headers: { Authorization: 'Bearer ' + apiKey } })
+    .then(r => r.json())
+    .then(stats => {
+      const providers = Object.entries(stats);
+      if (!providers.length) {
+        document.getElementById('monitorContent').innerHTML = '暂无调用记录';
+        return;
+      }
+      let html = '';
+      providers.forEach(([name, data]) => {
+        const lastTime = data.last_request ? new Date(data.last_request * 1000).toLocaleString() : '-';
+        html += `<div style="margin-bottom:16px">
+          <strong style="font-size:14px">${esc(name)}</strong>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">最后调用 ${lastTime}</span>
+          <table style="width:100%;border-collapse:collapse;margin-top:6px">
+            <tr style="color:var(--text-muted);font-size:11px">
+              <td style="padding:3px 8px">时段</td>
+              <td style="padding:3px 8px;text-align:right">调用次数</td>
+              <td style="padding:3px 8px;text-align:right">输入 Token</td>
+              <td style="padding:3px 8px;text-align:right">输出 Token</td>
+            </tr>
+            ${_monitorRow('今日', data.today)}
+            ${_monitorRow('昨日', data.yesterday)}
+            ${_monitorRow('总计', data.total, true)}
+          </table>
+        </div>`;
+      });
+      document.getElementById('monitorContent').innerHTML = html;
+    })
+    .catch(() => {
+      document.getElementById('monitorContent').innerHTML = '加载失败';
+    });
+}
+
+function _monitorRow(label, d, bold) {
+  const style = bold ? 'font-weight:600;border-top:2px solid var(--border)' : 'border-top:1px solid var(--border)';
+  return `<tr style="${style}">
+    <td style="padding:5px 8px">${label}</td>
+    <td style="padding:5px 8px;text-align:right">${d.requests.toLocaleString()}</td>
+    <td style="padding:5px 8px;text-align:right">${d.input_tokens.toLocaleString()}</td>
+    <td style="padding:5px 8px;text-align:right">${d.output_tokens.toLocaleString()}</td>
+  </tr>`;
+}
+
 // ---- Health check ----
 function checkHealth() {
   fetch('/healthz')
@@ -597,8 +691,15 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') unlock();
 });
 
-// Periodic health check
-setInterval(checkHealth, 30000);
+// Periodic health check + monitor refresh
+function isTabActive(name) {
+  const tab = document.querySelector(`.tab[onclick*="${name}"]`);
+  return tab && tab.classList.contains('active');
+}
+setInterval(() => {
+  checkHealth();
+  if (isTabActive('monitor')) loadMonitor();
+}, 10000);
 </script>
 
 </body>
