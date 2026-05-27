@@ -35,6 +35,13 @@ class GeminiConfig(BaseModel):
     models: list[str] = []
 
 
+class AzureConfig(BaseModel):
+    api_key: str = ""
+    endpoint: str = ""
+    api_version: str = "2025-01-01-preview"
+    models: list[str] = []
+
+
 class ApiToken(BaseModel):
     name: str
     token: str
@@ -45,6 +52,7 @@ class GatewayConfig(BaseModel):
     bedrock: BedrockConfig = BedrockConfig()
     openai: OpenAIConfig = OpenAIConfig()
     gemini: GeminiConfig = GeminiConfig()
+    azure: AzureConfig = AzureConfig()
     api_tokens: list[ApiToken] = Field(default_factory=list)
 
 
@@ -77,6 +85,13 @@ def load_config() -> GatewayConfig:
     if not gemini_raw.get("api_key"):
         gemini_raw["api_key"] = os.environ.get("GEMINI_API_KEY", "")
     raw["gemini"] = gemini_raw
+
+    azure_raw = raw.get("azure", {})
+    if not azure_raw.get("api_key"):
+        azure_raw["api_key"] = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    if not azure_raw.get("endpoint"):
+        azure_raw["endpoint"] = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    raw["azure"] = azure_raw
 
     return GatewayConfig(**raw)
 

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.auth import verify_api_key
 from app.models import ChatRequest, ChatResponse, HealthResponse, Message, ModelsResponse
 from app.provider_config import get_config
+from app.providers.azure import AzureFoundryProvider
 from app.providers.bedrock import BedrockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
@@ -21,6 +22,7 @@ _providers = {
     "bedrock": BedrockProvider(),
     "openai": OpenAIProvider(),
     "gemini": GeminiProvider(),
+    "azure": AzureFoundryProvider(),
 }
 
 
@@ -42,6 +44,9 @@ def _detect_provider(model: str) -> str:
     for m_id in config.bedrock.models:
         if m_id.strip().lower() == model.lower():
             return "bedrock"
+    for m in config.azure.models:
+        if m.strip().lower() == model.lower():
+            return "azure"
     raise HTTPException(status_code=400, detail=f"Model '{model}' not found in any provider config")
 
 
@@ -81,7 +86,9 @@ class OAIRequest(BaseModel):
     model: str
     messages: list[OAIMessage]
     max_tokens: int = 512
+    max_completion_tokens: int = 0
     temperature: float = 0.7
+    reasoning_effort: str = ""
     stream: bool = False
 
 
@@ -93,7 +100,9 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
         model=request.model,
         messages=[Message(role=m.role, content=m.content) for m in request.messages],
         max_tokens=request.max_tokens,
+        max_completion_tokens=request.max_completion_tokens,
         temperature=request.temperature,
+        reasoning_effort=request.reasoning_effort,
         stream=request.stream,
     )
     provider = _get_provider(provider_name)
@@ -138,6 +147,9 @@ async def list_models_openai(_: str = Depends(verify_api_key)):
     for m in config.gemini.models:
         if m.strip():
             data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "gemini"})
+    for m in config.azure.models:
+        if m.strip():
+            data.append({"id": m.strip(), "object": "model", "created": now, "owned_by": "azure"})
     return {"object": "list", "data": data}
 
 

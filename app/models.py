@@ -11,7 +11,9 @@ class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
     max_tokens: int = 512
+    max_completion_tokens: int = 0
     temperature: float = 0.7
+    reasoning_effort: str = ""
     stream: bool = False
 
 

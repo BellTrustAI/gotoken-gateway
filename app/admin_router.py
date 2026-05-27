@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.auth import verify_api_key
 from app.provider_config import (
     ApiToken,
+    AzureConfig,
     BedrockConfig,
     GatewayConfig,
     GeminiConfig,
@@ -47,6 +48,15 @@ def update_openai(cfg: OpenAIConfig, _: str = Depends(verify_api_key)) -> dict:
 def update_gemini(cfg: GeminiConfig, _: str = Depends(verify_api_key)) -> dict:
     config = get_config()
     config.gemini = cfg
+    save_config(config)
+    reload_config()
+    return {"status": "ok"}
+
+
+@admin.put("/providers/azure")
+def update_azure(cfg: AzureConfig, _: str = Depends(verify_api_key)) -> dict:
+    config = get_config()
+    config.azure = cfg
     save_config(config)
     reload_config()
     return {"status": "ok"}

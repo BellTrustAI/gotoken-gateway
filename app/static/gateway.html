@@ -133,7 +133,7 @@
 
     <div class="tabs">
       <div class="tab active" onclick="switchTab('bedrock')">AWS Bedrock</div>
-      <div class="tab" onclick="switchTab('openai')">OpenAI</div>
+      <div class="tab" onclick="switchTab('azure')">Azure AI</div>
       <div class="tab" onclick="switchTab('gemini')">Gemini</div>
       <div class="tab" onclick="switchTab('tokens')">Tokens</div>
       <div class="tab" onclick="switchTab('guide')">使用指南</div>
@@ -164,27 +164,6 @@
       <button onclick="saveBedrock()">Save Bedrock Config</button>
     </div>
 
-    <!-- OpenAI Tab -->
-    <div id="tab-openai" class="hidden">
-      <div class="section">
-        <h3>API Credentials</h3>
-        <div class="field">
-          <label>API Key</label>
-          <input type="password" id="openai-key" placeholder="sk-...">
-        </div>
-        <div class="field">
-          <label>Base URL <span class="hint">(optional, leave blank for default)</span></label>
-          <input type="text" id="openai-base" placeholder="https://api.openai.com/v1">
-        </div>
-      </div>
-      <div class="section">
-        <h3>Allowed Models</h3>
-        <div id="openai-models"></div>
-        <button class="btn-sm model-add" onclick="addOpenAIModel()">+ Add Model</button>
-      </div>
-      <button onclick="saveOpenAI()">Save OpenAI Config</button>
-    </div>
-
     <!-- Gemini Tab -->
     <div id="tab-gemini" class="hidden">
       <div class="section">
@@ -200,6 +179,34 @@
         <button class="btn-sm model-add" onclick="addGeminiModel()">+ Add Model</button>
       </div>
       <button onclick="saveGemini()">Save Gemini Config</button>
+    </div>
+
+    <!-- Azure AI Foundry Tab -->
+    <div id="tab-azure" class="hidden">
+      <div class="section">
+        <h3>Azure AI Foundry Credentials</h3>
+        <div class="field">
+          <label>API Key</label>
+          <input type="password" id="azure-key" placeholder="Azure OpenAI API Key">
+        </div>
+        <div class="field">
+          <label>Endpoint URL</label>
+          <input type="text" id="azure-endpoint" placeholder="https://<resource>.services.ai.azure.com/openai/v1">
+        </div>
+        <div class="field">
+          <label>API Version</label>
+          <input type="text" id="azure-apiver" placeholder="2025-01-01-preview">
+        </div>
+      </div>
+      <div class="section">
+        <h3>Allowed Models</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+          codex 推理模型会自动使用 max_completion_tokens + reasoning_effort 参数
+        </p>
+        <div id="azure-models"></div>
+        <button class="btn-sm model-add" onclick="addAzureModel()">+ Add Model</button>
+      </div>
+      <button onclick="saveAzure()">Save Azure Config</button>
     </div>
 
     <!-- Tokens Tab -->
@@ -394,35 +401,6 @@ function saveBedrock() {
   .catch(() => toast('Network error', 'error'));
 }
 
-// ---- OpenAI ----
-function renderOpenAIModels() {
-  const models = config.openai.models || [];
-  const container = document.getElementById('openai-models');
-  container.innerHTML = models.map((m, i) =>
-    `<div class="model-row">
-      <input value="${esc(m)}" placeholder="gpt-5.5" onchange="config.openai.models[${i}]=this.value">
-      <button class="btn-sm btn-danger" onclick="config.openai.models.splice(${i},1);renderOpenAIModels()">×</button>
-    </div>`
-  ).join('');
-}
-
-function addOpenAIModel() {
-  config.openai.models = config.openai.models || [];
-  config.openai.models.push('');
-  renderOpenAIModels();
-}
-
-function saveOpenAI() {
-  config.openai.api_key = document.getElementById('openai-key').value;
-  config.openai.base_url = document.getElementById('openai-base').value;
-  config.openai.models = (config.openai.models || []).filter(m => m.trim());
-  fetch('/admin/providers/openai', {
-    method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.openai)
-  })
-  .then(r => r.ok ? toast('OpenAI config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
-  .catch(() => toast('Network error', 'error'));
-}
-
 // ---- Gemini ----
 function renderGeminiModels() {
   const models = config.gemini.models || [];
@@ -448,6 +426,36 @@ function saveGemini() {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.gemini)
   })
   .then(r => r.ok ? toast('Gemini config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
+  .catch(() => toast('Network error', 'error'));
+}
+
+// ---- Azure AI Foundry ----
+function renderAzureModels() {
+  const models = config.azure.models || [];
+  const container = document.getElementById('azure-models');
+  container.innerHTML = models.map((m, i) =>
+    `<div class="model-row">
+      <input value="${esc(m)}" placeholder="gpt-5.4-nano" onchange="config.azure.models[${i}]=this.value">
+      <button class="btn-sm btn-danger" onclick="config.azure.models.splice(${i},1);renderAzureModels()">×</button>
+    </div>`
+  ).join('');
+}
+
+function addAzureModel() {
+  config.azure.models = config.azure.models || [];
+  config.azure.models.push('');
+  renderAzureModels();
+}
+
+function saveAzure() {
+  config.azure.api_key = document.getElementById('azure-key').value;
+  config.azure.endpoint = document.getElementById('azure-endpoint').value;
+  config.azure.api_version = document.getElementById('azure-apiver').value || '2025-01-01-preview';
+  config.azure.models = (config.azure.models || []).filter(m => m.trim());
+  fetch('/admin/providers/azure', {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.azure)
+  })
+  .then(r => r.ok ? toast('Azure config saved', 'success') : r.json().then(d => toast(d.detail || 'Save failed', 'error')))
   .catch(() => toast('Network error', 'error'));
 }
 
@@ -557,12 +565,13 @@ function renderAll() {
   document.getElementById('bedrock-region').value = config.bedrock.aws_region || 'us-west-2';
   renderBedrockModels();
 
-  document.getElementById('openai-key').value = config.openai.api_key || '';
-  document.getElementById('openai-base').value = config.openai.base_url || '';
-  renderOpenAIModels();
-
   document.getElementById('gemini-key').value = config.gemini.api_key || '';
   renderGeminiModels();
+
+  document.getElementById('azure-key').value = config.azure.api_key || '';
+  document.getElementById('azure-endpoint').value = config.azure.endpoint || '';
+  document.getElementById('azure-apiver').value = config.azure.api_version || '2025-01-01-preview';
+  renderAzureModels();
 }
 
 function esc(s) {
