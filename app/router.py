@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import verify_api_key
-from app.models import ChatRequest, ChatResponse, HealthResponse, Message, ModelsResponse, ResponseRequest
+from app.models import ChatRequest, ChatResponse, ContentPart, HealthResponse, Message, ModelsResponse, ResponseRequest
 from app.provider_config import get_config
 from app.providers.azure import AzureFoundryProvider
 from app.providers.bedrock import BedrockProvider
@@ -79,7 +79,7 @@ async def list_models(provider: str = "bedrock", _: str = Depends(verify_api_key
 
 class OAIMessage(BaseModel):
     role: str
-    content: str
+    content: Union[str, list[dict]]
 
 
 class OAIRequest(BaseModel):
@@ -95,10 +95,17 @@ class OAIRequest(BaseModel):
 @router.post("/v1/chat/completions")
 async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)):
     provider_name = _detect_provider(request.model)
+    messages = []
+    for m in request.messages:
+        if isinstance(m.content, list):
+            parts = [ContentPart(**p) for p in m.content]
+            messages.append(Message(role=m.role, content=parts))
+        else:
+            messages.append(Message(role=m.role, content=m.content))
     req = ChatRequest(
         provider=provider_name,
         model=request.model,
-        messages=[Message(role=m.role, content=m.content) for m in request.messages],
+        messages=messages,
         max_tokens=request.max_tokens,
         max_completion_tokens=request.max_completion_tokens,
         temperature=request.temperature,

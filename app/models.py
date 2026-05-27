@@ -1,9 +1,21 @@
+from typing import Union
+
 from pydantic import BaseModel
+
+
+class ImageUrl(BaseModel):
+    url: str
+
+
+class ContentPart(BaseModel):
+    type: str
+    text: str = ""
+    image_url: ImageUrl | None = None
 
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: Union[str, list[ContentPart]]
 
 
 class ResponseRequest(BaseModel):

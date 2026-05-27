@@ -31,7 +31,9 @@ class OpenAIConfig(BaseModel):
 
 
 class GeminiConfig(BaseModel):
-    api_key: str = ""
+    project_id: str = ""
+    location: str = "global"
+    credentials_json: str = ""
     models: list[str] = []
 
 
@@ -86,8 +88,12 @@ def load_config() -> GatewayConfig:
     raw["openai"] = openai_raw
 
     gemini_raw = raw.get("gemini", {})
-    if not gemini_raw.get("api_key"):
-        gemini_raw["api_key"] = os.environ.get("GEMINI_API_KEY", "")
+    if not gemini_raw.get("project_id"):
+        gemini_raw["project_id"] = os.environ.get("GEMINI_PROJECT_ID", "")
+    if not gemini_raw.get("location"):
+        gemini_raw["location"] = os.environ.get("GEMINI_LOCATION", "global")
+    if not gemini_raw.get("credentials_json"):
+        gemini_raw["credentials_json"] = os.environ.get("GEMINI_CREDENTIALS_JSON", "")
     raw["gemini"] = gemini_raw
 
     azure_raw = raw.get("azure", {})

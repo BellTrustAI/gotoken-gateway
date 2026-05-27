@@ -81,6 +81,12 @@
     font-weight: 500;
   }
   .field input { width: 100%; }
+  .field textarea {
+    width: 100%; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-family: monospace;
+    font-size: 12px; padding: 8px 12px; outline: none; resize: vertical;
+  }
+  .field textarea:focus { border-color: var(--accent); }
   .field .hint { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
 
   /* Model list */
@@ -167,10 +173,20 @@
     <!-- Gemini Tab -->
     <div id="tab-gemini" class="hidden">
       <div class="section">
-        <h3>API Credentials</h3>
+        <h3>Vertex AI Configuration</h3>
         <div class="field">
-          <label>API Key</label>
-          <input type="password" id="gemini-key" placeholder="AIza...">
+          <label>Project ID</label>
+          <input type="text" id="gemini-project-id" placeholder="your-gcp-project-id">
+        </div>
+        <div class="field">
+          <label>Location</label>
+          <input type="text" id="gemini-location" placeholder="global">
+          <div class="hint">GCP region, e.g. global, us-central1</div>
+        </div>
+        <div class="field">
+          <label>Service Account JSON Key</label>
+          <textarea id="gemini-credentials" placeholder='{"type":"service_account","project_id":"...", ...}' style="width:100%;min-height:120px;font-family:monospace;font-size:12px"></textarea>
+          <div class="hint">Paste the full JSON content of your GCP service account key</div>
         </div>
       </div>
       <div class="section">
@@ -416,7 +432,9 @@ function addGeminiModel() {
 }
 
 function saveGemini() {
-  config.gemini.api_key = document.getElementById('gemini-key').value;
+  config.gemini.project_id = document.getElementById('gemini-project-id').value.trim();
+  config.gemini.location = document.getElementById('gemini-location').value.trim() || 'global';
+  config.gemini.credentials_json = document.getElementById('gemini-credentials').value.trim();
   config.gemini.models = (config.gemini.models || []).map(m => m.trim()).filter(m => m);
   fetch('/admin/providers/gemini', {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(config.gemini)
@@ -560,7 +578,9 @@ function renderAll() {
   document.getElementById('bedrock-region').value = config.bedrock.aws_region || 'us-west-2';
   renderBedrockModels();
 
-  document.getElementById('gemini-key').value = config.gemini.api_key || '';
+  document.getElementById('gemini-project-id').value = config.gemini.project_id || '';
+  document.getElementById('gemini-location').value = config.gemini.location || 'global';
+  document.getElementById('gemini-credentials').value = config.gemini.credentials_json || '';
   renderGeminiModels();
 
   document.getElementById('azure-key').value = config.azure.api_key || '';
