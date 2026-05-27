@@ -123,6 +123,19 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
         logger.exception("Provider error for model=%s", request.model if hasattr(request, 'model') else "unknown")
         raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
+    # Build message content — multimodal if images are present
+    if result.images:
+        message_content = []
+        if result.content:
+            message_content.append({"type": "text", "text": result.content})
+        for img in result.images:
+            message_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{img.mime_type};base64,{img.data}"},
+            })
+    else:
+        message_content = result.content
+
     return {
         "id": "chatcmpl-" + uuid.uuid4().hex[:24],
         "object": "chat.completion",
@@ -130,7 +143,7 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
         "model": request.model,
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant", "content": result.content},
+            "message": {"role": "assistant", "content": message_content},
             "finish_reason": "stop",
         }],
         "usage": {

@@ -7,7 +7,7 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
-from app.models import ChatRequest, ChatResponse, ContentPart, Usage
+from app.models import ChatRequest, ChatResponse, ContentPart, ImageOutput, Usage
 from app.provider_config import get_config
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,10 @@ class GeminiProvider:
             temperature=request.temperature,
         )
 
+        # Enable image output for image-generation models
+        if "image" in request.model.lower():
+            generate_config.response_modalities = ["TEXT", "IMAGE"]
+
         if system_instruction:
             generate_config.system_instruction = system_instruction
 
@@ -130,7 +134,19 @@ class GeminiProvider:
             logger.exception("Gemini Vertex AI API error for model=%s", request.model)
             raise ValueError(f"Gemini API error: {e}")
 
-        content = response.text if response.text else ""
+        text_parts = []
+        images = []
+        if response.candidates and response.candidates[0].content:
+            for part in response.candidates[0].content.parts:
+                if part.text:
+                    text_parts.append(part.text)
+                if hasattr(part, "inline_data") and part.inline_data:
+                    images.append(ImageOutput(
+                        mime_type=part.inline_data.mime_type,
+                        data=base64.b64encode(part.inline_data.data).decode(),
+                    ))
+
+        content = "\n".join(text_parts) if text_parts else ""
 
         usage = None
         if response.usage_metadata:
@@ -143,5 +159,6 @@ class GeminiProvider:
             provider="gemini",
             model=request.model,
             content=content,
+            images=images if images else None,
             usage=usage,
         )

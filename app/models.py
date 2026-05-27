@@ -42,10 +42,16 @@ class Usage(BaseModel):
     output_tokens: int
 
 
+class ImageOutput(BaseModel):
+    mime_type: str
+    data: str  # base64 encoded bytes
+
+
 class ChatResponse(BaseModel):
     provider: str
     model: str
     content: str
+    images: list[ImageOutput] | None = None
     usage: Usage | None = None
 
 
