@@ -6,6 +6,14 @@ class Message(BaseModel):
     content: str
 
 
+class ResponseRequest(BaseModel):
+    provider: str
+    model: str
+    input: str = ""
+    max_output_tokens: int = 512
+    reasoning_effort: str = ""
+
+
 class ChatRequest(BaseModel):
     provider: str
     model: str

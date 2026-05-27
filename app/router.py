@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import verify_api_key
-from app.models import ChatRequest, ChatResponse, HealthResponse, Message, ModelsResponse
+from app.models import ChatRequest, ChatResponse, HealthResponse, Message, ModelsResponse, ResponseRequest
 from app.provider_config import get_config
 from app.providers.azure import AzureFoundryProvider
 from app.providers.bedrock import BedrockProvider
@@ -226,6 +226,53 @@ async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api
         "content": [{"type": "text", "text": result.content}],
         "stop_reason": "end_turn",
         "stop_sequence": None,
+        "usage": {
+            "input_tokens": result.usage.input_tokens if result.usage else 0,
+            "output_tokens": result.usage.output_tokens if result.usage else 0,
+        },
+    }
+
+
+# ---- OpenAI Responses API-compatible endpoint ----
+
+
+class OAIResponseRequest(BaseModel):
+    model: str
+    input: str = ""
+    max_output_tokens: int = 512
+    reasoning_effort: str = ""
+
+
+@router.post("/v1/responses")
+async def responses_create(request: OAIResponseRequest, _: str = Depends(verify_api_key)):
+    provider_name = _detect_provider(request.model)
+    req = ResponseRequest(
+        provider=provider_name,
+        model=request.model,
+        input=request.input,
+        max_output_tokens=request.max_output_tokens,
+        reasoning_effort=request.reasoning_effort,
+    )
+    provider = _get_provider(provider_name)
+    try:
+        result = await provider.responses(req)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Provider error for model=%s", request.model)
+        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    return {
+        "id": "resp_" + uuid.uuid4().hex[:24],
+        "object": "response",
+        "created_at": int(time.time()),
+        "model": request.model,
+        "output": [{
+            "type": "message",
+            "content": [{"type": "output_text", "text": result.content}],
+        }],
         "usage": {
             "input_tokens": result.usage.input_tokens if result.usage else 0,
             "output_tokens": result.usage.output_tokens if result.usage else 0,

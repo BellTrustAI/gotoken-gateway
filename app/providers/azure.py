@@ -4,15 +4,12 @@ import logging
 from azure.identity import ClientSecretCredential, get_bearer_token_provider
 from openai import OpenAI
 
-from app.models import ChatRequest, ChatResponse, Usage
+from app.models import ChatRequest, ChatResponse, ResponseRequest, Usage
 from app.provider_config import get_config
 
 logger = logging.getLogger(__name__)
 
 _AZURE_AD_SCOPE = "https://ai.azure.com/.default"
-
-# Models that need Entra ID or special auth — API Key returns "unsupported operation"
-_ENTRA_REQUIRED_MODELS = {"gpt-5.4-pro", "gpt-5.2-codex", "gpt-5.3-codex"}
 
 
 class AzureFoundryProvider:
@@ -48,14 +45,7 @@ class AzureFoundryProvider:
         else:
             self._entra_client = None
 
-    def _pick_client(self, model: str) -> OpenAI:
-        if model in _ENTRA_REQUIRED_MODELS:
-            if self._entra_client is None:
-                raise ValueError(
-                    f"Model '{model}' requires Entra ID authentication. "
-                    "Please configure Entra ID in Azure AI settings."
-                )
-            return self._entra_client
+    def _pick_client(self) -> OpenAI:
         return self._client
 
     def list_models(self) -> list[str]:
@@ -85,7 +75,7 @@ class AzureFoundryProvider:
             if request.temperature > 0:
                 kwargs["temperature"] = request.temperature
 
-        client = self._pick_client(request.model)
+        client = self._pick_client()
         response = await asyncio.to_thread(
             client.chat.completions.create, **kwargs
         )
@@ -98,5 +88,42 @@ class AzureFoundryProvider:
             usage=Usage(
                 input_tokens=response.usage.prompt_tokens if response.usage else 0,
                 output_tokens=response.usage.completion_tokens if response.usage else 0,
+            ),
+        )
+
+    async def responses(self, request: ResponseRequest) -> ChatResponse:
+        self._ensure_clients()
+        if request.model not in self._models:
+            available = ", ".join(self._models)
+            raise ValueError(f"Unknown Azure model '{request.model}'. Available: {available}")
+
+        kwargs: dict = {
+            "model": request.model,
+            "input": request.input,
+            "max_output_tokens": request.max_output_tokens,
+        }
+        if request.reasoning_effort:
+            kwargs["reasoning_effort"] = request.reasoning_effort
+
+        client = self._pick_client()
+        response = await asyncio.to_thread(
+            client.responses.create, **kwargs
+        )
+
+        output_text = ""
+        if response.output:
+            for item in response.output:
+                if getattr(item, "type", None) == "message":
+                    if hasattr(item, "content") and item.content:
+                        output_text = item.content[0].text or ""
+                    break
+
+        return ChatResponse(
+            provider="azure",
+            model=request.model,
+            content=output_text,
+            usage=Usage(
+                input_tokens=response.usage.input_tokens if response.usage else 0,
+                output_tokens=response.usage.output_tokens if response.usage else 0,
             ),
         )
