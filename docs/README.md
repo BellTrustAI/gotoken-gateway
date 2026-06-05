@@ -2,6 +2,11 @@
 
 统一 AI API 代理网关。新加坡服务器 `47.237.163.119` 作为 Bedrock / OpenAI / Gemini 代理入口。
 
+## 子文档
+
+- [Usage 透传规范](./usage_passthrough.md) — 每个路由如何把上游 token 详情透传给下游计费,新增 provider/路由 必读
+- [Image API 对接](./image_api.md) — `/v1/images/generations` `/v1/images/edits` 接入方式与已知坑
+
 ## 快速开始
 
 ```bash
