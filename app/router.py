@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.auth import verify_api_key
-from app.models import ChatRequest, ChatResponse, ContentPart, HealthResponse, Message, ModelsResponse, ResponseRequest
+from app.models import ChatRequest, ChatResponse, ContentPart, HealthResponse, ImageGenerateRequest, Message, ModelsResponse, ResponseRequest
 from app.provider_config import get_config
 from app.providers.azure import AzureFoundryProvider
 from app.providers.bedrock import BedrockProvider
@@ -439,4 +439,70 @@ async def responses_create(request: OAIResponseRequest, _: str = Depends(verify_
             "input_tokens": result.usage.input_tokens if result.usage else 0,
             "output_tokens": result.usage.output_tokens if result.usage else 0,
         },
+    }
+
+
+# ---- OpenAI Images API-compatible endpoint ----
+
+
+class OAIImageRequest(BaseModel):
+    model: str
+    prompt: str
+    n: int = 1
+    size: str = ""
+    quality: str = ""
+    response_format: str = ""
+    output_format: str = ""
+    output_compression: int | None = None
+    background: str = ""
+
+    class Config:
+        extra = "allow"
+
+
+@router.post("/v1/images/generations")
+async def images_generations(request: OAIImageRequest, _: str = Depends(verify_api_key)):
+    provider_name = _detect_provider(request.model)
+    known = {
+        "model", "prompt", "n", "size", "quality", "response_format",
+        "output_format", "output_compression", "background",
+    }
+    extra = {k: v for k, v in request.model_dump().items() if k not in known}
+    req = ImageGenerateRequest(
+        provider=provider_name,
+        model=request.model,
+        prompt=request.prompt,
+        n=request.n,
+        size=request.size,
+        quality=request.quality,
+        response_format=request.response_format,
+        output_format=request.output_format,
+        output_compression=request.output_compression,
+        background=request.background,
+        extra=extra,
+    )
+    provider = _get_provider(provider_name)
+    if not hasattr(provider, "images"):
+        raise HTTPException(status_code=501, detail=f"Provider '{provider_name}' does not support image generation")
+    try:
+        result = await provider.images(req)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Provider error for model=%s", request.model)
+        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    if result.usage:
+        get_collector().record(
+            provider=provider_name,
+            model=request.model,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+        )
+
+    return {
+        "created": int(time.time()),
+        "data": [{"b64_json": img.data} for img in result.images],
     }

@@ -4,7 +4,7 @@ import logging
 from azure.identity import ClientSecretCredential, get_bearer_token_provider
 from openai import OpenAI
 
-from app.models import ChatRequest, ChatResponse, ResponseRequest, Usage
+from app.models import ChatRequest, ChatResponse, ImageGenerateRequest, ImageGenerateResponse, ImageOutput, ResponseRequest, Usage
 from app.provider_config import get_config
 
 logger = logging.getLogger(__name__)
@@ -154,4 +154,63 @@ class AzureFoundryProvider:
                 input_tokens=response.usage.input_tokens if response.usage else 0,
                 output_tokens=response.usage.output_tokens if response.usage else 0,
             ),
+        )
+
+    async def images(self, request: ImageGenerateRequest) -> ImageGenerateResponse:
+        self._ensure_clients()
+        if request.model not in self._models:
+            available = ", ".join(self._models)
+            raise ValueError(f"Unknown Azure model '{request.model}'. Available: {available}")
+
+        kwargs: dict = {
+            "model": request.model,
+            "prompt": request.prompt,
+            "n": request.n or 1,
+        }
+        if request.size:
+            kwargs["size"] = request.size
+        if request.quality:
+            kwargs["quality"] = request.quality
+        if request.response_format:
+            kwargs["response_format"] = request.response_format
+        if request.output_format:
+            kwargs["output_format"] = request.output_format
+        if request.output_compression is not None:
+            kwargs["output_compression"] = request.output_compression
+        if request.background:
+            kwargs["background"] = request.background
+        if request.extra:
+            for k, v in request.extra.items():
+                kwargs.setdefault(k, v)
+
+        client = self._pick_client()
+        response = await asyncio.to_thread(
+            client.images.generate, **kwargs
+        )
+
+        mime = "image/png"
+        fmt = (request.output_format or "").lower()
+        if fmt == "jpeg" or fmt == "jpg":
+            mime = "image/jpeg"
+        elif fmt == "webp":
+            mime = "image/webp"
+
+        images: list[ImageOutput] = []
+        for item in (response.data or []):
+            b64 = getattr(item, "b64_json", None)
+            if b64:
+                images.append(ImageOutput(mime_type=mime, data=b64))
+
+        usage_in = 0
+        usage_out = 0
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            usage_in = getattr(usage, "input_tokens", 0) or 0
+            usage_out = getattr(usage, "output_tokens", 0) or 0
+
+        return ImageGenerateResponse(
+            provider="azure",
+            model=request.model,
+            images=images,
+            usage=Usage(input_tokens=usage_in, output_tokens=usage_out),
         )

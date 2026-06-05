@@ -37,6 +37,20 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+class ImageGenerateRequest(BaseModel):
+    provider: str
+    model: str
+    prompt: str
+    n: int = 1
+    size: str = ""
+    quality: str = ""
+    response_format: str = ""
+    output_format: str = ""
+    output_compression: int | None = None
+    background: str = ""
+    extra: dict = {}
+
+
 class Usage(BaseModel):
     input_tokens: int
     output_tokens: int
@@ -52,6 +66,13 @@ class ChatResponse(BaseModel):
     model: str
     content: str
     images: list[ImageOutput] | None = None
+    usage: Usage | None = None
+
+
+class ImageGenerateResponse(BaseModel):
+    provider: str
+    model: str
+    images: list[ImageOutput]
     usage: Usage | None = None
 
 
