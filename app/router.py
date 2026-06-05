@@ -550,7 +550,12 @@ async def images_edits(
                     if isinstance(v, UploadFile):
                         image_files.append(v)
     if not image_files:
-        raise HTTPException(status_code=400, detail="'image' field is required")
+        try:
+            keys_dump = [(k, type(v).__name__) for k, v in form.multi_items()]
+        except Exception:
+            keys_dump = list(form.keys())
+        logger.warning("images_edits: 'image' not found in form. keys=%s", keys_dump)
+        raise HTTPException(status_code=400, detail=f"'image' field is required (received form keys: {keys_dump})")
 
     images_payload: list[tuple[str, bytes, str]] = []
     for f in image_files:
