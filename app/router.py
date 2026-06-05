@@ -513,6 +513,9 @@ async def images_generations(request: OAIImageRequest, _: str = Depends(verify_a
     if result.raw_usage:
         body["usage"] = result.raw_usage
     return body
+
+
+def _guess_image_mime(filename: str | None) -> str:
     if filename:
         m, _ = mimetypes.guess_type(filename)
         if m:
