@@ -503,13 +503,16 @@ async def images_generations(request: OAIImageRequest, _: str = Depends(verify_a
             output_tokens=result.usage.output_tokens,
         )
 
-    return {
+    body = {
         "created": int(time.time()),
         "data": [{"b64_json": img.data} for img in result.images],
     }
-
-
-def _guess_image_mime(filename: str | None) -> str:
+    if result.raw_meta:
+        for k, v in result.raw_meta.items():
+            body.setdefault(k, v)
+    if result.raw_usage:
+        body["usage"] = result.raw_usage
+    return body
     if filename:
         m, _ = mimetypes.guess_type(filename)
         if m:
@@ -604,7 +607,13 @@ async def images_edits(
             output_tokens=result.usage.output_tokens,
         )
 
-    return {
+    body = {
         "created": int(time.time()),
         "data": [{"b64_json": img.data} for img in result.images],
     }
+    if result.raw_meta:
+        for k, v in result.raw_meta.items():
+            body.setdefault(k, v)
+    if result.raw_usage:
+        body["usage"] = result.raw_usage
+    return body

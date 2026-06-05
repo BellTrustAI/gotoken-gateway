@@ -15,6 +15,46 @@ _AZURE_AD_SCOPE = "https://ai.azure.com/.default"
 _RESPONSES_ONLY_MODELS = {"gpt-5.4-pro", "gpt-5.2-codex", "gpt-5.3-codex"}
 
 
+def _to_jsonable(obj):
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump(exclude_none=True)
+        except Exception:
+            pass
+    if hasattr(obj, "to_dict"):
+        try:
+            return obj.to_dict()
+        except Exception:
+            pass
+    if hasattr(obj, "__dict__"):
+        return {k: _to_jsonable(v) for k, v in vars(obj).items() if not k.startswith("_")}
+    return None
+
+
+def _dump_usage(usage) -> dict | None:
+    if usage is None:
+        return None
+    d = _to_jsonable(usage)
+    return d if isinstance(d, dict) else None
+
+
+def _dump_meta(response) -> dict | None:
+    keys = ("background", "output_format", "quality", "size", "created")
+    out: dict = {}
+    for k in keys:
+        v = getattr(response, k, None)
+        if v is None:
+            continue
+        out[k] = v
+    return out or None
+
+
 class AzureFoundryProvider:
     def __init__(self) -> None:
         self._client = None
@@ -201,18 +241,18 @@ class AzureFoundryProvider:
             if b64:
                 images.append(ImageOutput(mime_type=mime, data=b64))
 
-        usage_in = 0
-        usage_out = 0
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            usage_in = getattr(usage, "input_tokens", 0) or 0
-            usage_out = getattr(usage, "output_tokens", 0) or 0
+        raw_usage = _dump_usage(getattr(response, "usage", None))
+        raw_meta = _dump_meta(response)
+        usage_in = int((raw_usage or {}).get("input_tokens") or 0)
+        usage_out = int((raw_usage or {}).get("output_tokens") or 0)
 
         return ImageGenerateResponse(
             provider="azure",
             model=request.model,
             images=images,
             usage=Usage(input_tokens=usage_in, output_tokens=usage_out),
+            raw_usage=raw_usage,
+            raw_meta=raw_meta,
         )
 
     async def images_edit(
@@ -287,16 +327,16 @@ class AzureFoundryProvider:
             if b64:
                 out.append(ImageOutput(mime_type=mime, data=b64))
 
-        usage_in = 0
-        usage_out = 0
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            usage_in = getattr(usage, "input_tokens", 0) or 0
-            usage_out = getattr(usage, "output_tokens", 0) or 0
+        raw_usage = _dump_usage(getattr(response, "usage", None))
+        raw_meta = _dump_meta(response)
+        usage_in = int((raw_usage or {}).get("input_tokens") or 0)
+        usage_out = int((raw_usage or {}).get("output_tokens") or 0)
 
         return ImageGenerateResponse(
             provider="azure",
             model=model,
             images=out,
             usage=Usage(input_tokens=usage_in, output_tokens=usage_out),
+            raw_usage=raw_usage,
+            raw_meta=raw_meta,
         )

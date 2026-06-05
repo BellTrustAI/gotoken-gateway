@@ -74,6 +74,8 @@ class ImageGenerateResponse(BaseModel):
     model: str
     images: list[ImageOutput]
     usage: Usage | None = None
+    raw_usage: dict | None = None
+    raw_meta: dict | None = None
 
 
 class ModelsResponse(BaseModel):
