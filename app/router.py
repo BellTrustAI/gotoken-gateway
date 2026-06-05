@@ -1,10 +1,11 @@
 import json
 import logging
+import mimetypes
 import time
 import uuid
 from typing import Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -498,6 +499,102 @@ async def images_generations(request: OAIImageRequest, _: str = Depends(verify_a
         get_collector().record(
             provider=provider_name,
             model=request.model,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+        )
+
+    return {
+        "created": int(time.time()),
+        "data": [{"b64_json": img.data} for img in result.images],
+    }
+
+
+def _guess_image_mime(filename: str | None) -> str:
+    if filename:
+        m, _ = mimetypes.guess_type(filename)
+        if m:
+            return m
+    return "image/png"
+
+
+@router.post("/v1/images/edits")
+async def images_edits(
+    request: Request,
+    _: str = Depends(verify_api_key),
+    prompt: str = Form(...),
+    model: str = Form(...),
+    n: int = Form(1),
+    size: str = Form(""),
+    response_format: str = Form(""),
+    output_format: str = Form(""),
+    output_compression: Optional[int] = Form(None),
+    quality: str = Form(""),
+    background: str = Form(""),
+    user: str = Form(""),
+    mask: Optional[UploadFile] = File(None),
+):
+    form = await request.form()
+    image_files: list[UploadFile] = []
+    if "image" in form:
+        for v in form.getlist("image"):
+            if isinstance(v, UploadFile):
+                image_files.append(v)
+    if not image_files and "image[]" in form:
+        for v in form.getlist("image[]"):
+            if isinstance(v, UploadFile):
+                image_files.append(v)
+    if not image_files:
+        for k in form.keys():
+            if k.startswith("image["):
+                for v in form.getlist(k):
+                    if isinstance(v, UploadFile):
+                        image_files.append(v)
+    if not image_files:
+        raise HTTPException(status_code=400, detail="'image' field is required")
+
+    images_payload: list[tuple[str, bytes, str]] = []
+    for f in image_files:
+        data = await f.read()
+        images_payload.append((f.filename or "image.png", data, _guess_image_mime(f.filename)))
+
+    mask_payload: tuple[str, bytes, str] | None = None
+    if mask is not None:
+        mb = await mask.read()
+        if mb:
+            mask_payload = (mask.filename or "mask.png", mb, _guess_image_mime(mask.filename))
+
+    provider_name = _detect_provider(model)
+    provider = _get_provider(provider_name)
+    if not hasattr(provider, "images_edit"):
+        raise HTTPException(status_code=501, detail=f"Provider '{provider_name}' does not support image edits")
+
+    try:
+        result = await provider.images_edit(
+            model=model,
+            prompt=prompt,
+            images=images_payload,
+            mask=mask_payload,
+            n=n,
+            size=size,
+            response_format=response_format,
+            output_format=output_format,
+            output_compression=output_compression,
+            quality=quality,
+            background=background,
+            user=user,
+        )
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Provider error for model=%s", model)
+        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+    if result.usage:
+        get_collector().record(
+            provider=provider_name,
+            model=model,
             input_tokens=result.usage.input_tokens,
             output_tokens=result.usage.output_tokens,
         )
