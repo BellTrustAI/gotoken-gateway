@@ -534,21 +534,21 @@ async def images_edits(
     mask: Optional[UploadFile] = File(None),
 ):
     form = await request.form()
-    image_files: list[UploadFile] = []
-    if "image" in form:
-        for v in form.getlist("image"):
-            if isinstance(v, UploadFile):
+    image_files: list = []
+
+    def _extract(key: str):
+        for v in form.getlist(key):
+            if hasattr(v, "read") and hasattr(v, "filename"):
                 image_files.append(v)
-    if not image_files and "image[]" in form:
-        for v in form.getlist("image[]"):
-            if isinstance(v, UploadFile):
-                image_files.append(v)
+
+    _extract("image")
+    if not image_files:
+        _extract("image[]")
     if not image_files:
         for k in form.keys():
             if k.startswith("image["):
-                for v in form.getlist(k):
-                    if isinstance(v, UploadFile):
-                        image_files.append(v)
+                _extract(k)
+
     if not image_files:
         try:
             keys_dump = [(k, type(v).__name__) for k, v in form.multi_items()]
