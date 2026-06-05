@@ -155,11 +155,21 @@ class GeminiProvider:
         content = "\n".join(text_parts) if text_parts else (response.text or "")
 
         usage = None
+        raw_usage = None
         if response.usage_metadata:
             usage = Usage(
                 input_tokens=response.usage_metadata.prompt_token_count or 0,
                 output_tokens=response.usage_metadata.candidates_token_count or 0,
             )
+            try:
+                if hasattr(response.usage_metadata, "model_dump"):
+                    raw_usage = response.usage_metadata.model_dump(exclude_none=True)
+                elif hasattr(response.usage_metadata, "to_dict"):
+                    raw_usage = response.usage_metadata.to_dict()
+                else:
+                    raw_usage = {k: v for k, v in vars(response.usage_metadata).items() if not k.startswith("_") and v is not None}
+            except Exception:
+                raw_usage = None
 
         return ChatResponse(
             provider="gemini",
@@ -167,4 +177,5 @@ class GeminiProvider:
             content=content,
             images=images if images else None,
             usage=usage,
+            raw_usage=raw_usage,
         )

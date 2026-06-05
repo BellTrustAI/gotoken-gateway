@@ -64,6 +64,61 @@ def _record_stats(result, provider_name: str, model: str):
     )
 
 
+def _openai_chat_usage(provider_name: str, result: ChatResponse) -> dict:
+    """Build an OpenAI-standard chat usage object, preserving upstream details.
+
+    Azure: raw_usage is already OpenAI shape (prompt_tokens/completion_tokens/_details) — pass through.
+    Bedrock (Claude): raw_usage is Anthropic shape (input_tokens/output_tokens/cache_*) — map.
+    Gemini: raw_usage is google shape (prompt_token_count/candidates_token_count/cached_content_token_count/thoughts_token_count) — map.
+    """
+    raw = result.raw_usage or {}
+    in_tok = result.usage.input_tokens if result.usage else 0
+    out_tok = result.usage.output_tokens if result.usage else 0
+    total = in_tok + out_tok
+
+    if provider_name == "azure":
+        usage = dict(raw) if raw else {}
+        usage.setdefault("prompt_tokens", in_tok)
+        usage.setdefault("completion_tokens", out_tok)
+        usage.setdefault("total_tokens", total)
+        return usage
+
+    if provider_name == "bedrock":
+        cache_create = int(raw.get("cache_creation_input_tokens") or 0)
+        cache_read = int(raw.get("cache_read_input_tokens") or 0)
+        usage = {
+            "prompt_tokens": in_tok + cache_create + cache_read,
+            "completion_tokens": out_tok,
+            "total_tokens": in_tok + cache_create + cache_read + out_tok,
+        }
+        if cache_read or cache_create:
+            usage["prompt_tokens_details"] = {
+                "cached_tokens": cache_read,
+                "cache_creation_input_tokens": cache_create,
+            }
+        return usage
+
+    if provider_name == "gemini":
+        cached = int(raw.get("cached_content_token_count") or 0)
+        thoughts = int(raw.get("thoughts_token_count") or 0)
+        usage = {
+            "prompt_tokens": in_tok,
+            "completion_tokens": out_tok,
+            "total_tokens": int(raw.get("total_token_count") or total),
+        }
+        if cached:
+            usage["prompt_tokens_details"] = {"cached_tokens": cached}
+        if thoughts:
+            usage["completion_tokens_details"] = {"reasoning_tokens": thoughts}
+        return usage
+
+    return {
+        "prompt_tokens": in_tok,
+        "completion_tokens": out_tok,
+        "total_tokens": total,
+    }
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, _: str = Depends(verify_api_key)) -> ChatResponse:
     provider = _get_provider(request.provider)
@@ -163,11 +218,7 @@ async def chat_completions(request: OAIRequest, _: str = Depends(verify_api_key)
             "message": {"role": "assistant", "content": message_content},
             "finish_reason": "stop",
         }],
-        "usage": {
-            "prompt_tokens": result.usage.input_tokens if result.usage else 0,
-            "completion_tokens": result.usage.output_tokens if result.usage else 0,
-            "total_tokens": (result.usage.input_tokens + result.usage.output_tokens) if result.usage else 0,
-        },
+        "usage": _openai_chat_usage(provider_name, result),
     }
 
 
@@ -198,6 +249,27 @@ class GeminiNativeRequest(BaseModel):
     generationConfig: dict | None = None
 
 
+def _gemini_usage_metadata(result: ChatResponse) -> dict:
+    """Build Gemini-native usageMetadata, preserving cached/thoughts counts when present."""
+    raw = result.raw_usage or {}
+    in_tok = result.usage.input_tokens if result.usage else 0
+    out_tok = result.usage.output_tokens if result.usage else 0
+    total = int(raw.get("total_token_count") or (in_tok + out_tok))
+
+    md = {
+        "promptTokenCount": in_tok,
+        "candidatesTokenCount": out_tok,
+        "totalTokenCount": total,
+    }
+    cached = int(raw.get("cached_content_token_count") or 0)
+    thoughts = int(raw.get("thoughts_token_count") or 0)
+    if cached:
+        md["cachedContentTokenCount"] = cached
+    if thoughts:
+        md["thoughtsTokenCount"] = thoughts
+    return md
+
+
 def _gemini_response(result: ChatResponse, model: str, finish_reason: str = "STOP") -> dict:
     """Convert internal ChatResponse to Gemini native response format."""
     parts = []
@@ -213,11 +285,7 @@ def _gemini_response(result: ChatResponse, model: str, finish_reason: str = "STO
             "content": {"role": "model", "parts": parts},
             "finishReason": finish_reason,
         }],
-        "usageMetadata": {
-            "promptTokenCount": result.usage.input_tokens if result.usage else 0,
-            "candidatesTokenCount": result.usage.output_tokens if result.usage else 0,
-            "totalTokenCount": (result.usage.input_tokens + result.usage.output_tokens) if result.usage else 0,
-        },
+        "usageMetadata": _gemini_usage_metadata(result),
     }
 
 
@@ -345,6 +413,40 @@ def _anthropic_content_to_str(content: Union[str, list[AnthropicContentBlock]]) 
     return "\n".join(parts)
 
 
+def _anthropic_usage(provider_name: str, result: ChatResponse) -> dict:
+    """Build an Anthropic-standard usage object: input_tokens / output_tokens / cache_*."""
+    raw = result.raw_usage or {}
+    in_tok = result.usage.input_tokens if result.usage else 0
+    out_tok = result.usage.output_tokens if result.usage else 0
+
+    if provider_name == "bedrock":
+        usage = {"input_tokens": in_tok, "output_tokens": out_tok}
+        if raw.get("cache_creation_input_tokens"):
+            usage["cache_creation_input_tokens"] = int(raw["cache_creation_input_tokens"])
+        if raw.get("cache_read_input_tokens"):
+            usage["cache_read_input_tokens"] = int(raw["cache_read_input_tokens"])
+        return usage
+
+    if provider_name == "azure":
+        cached = 0
+        details = raw.get("prompt_tokens_details") or {}
+        if isinstance(details, dict):
+            cached = int(details.get("cached_tokens") or 0)
+        usage = {"input_tokens": in_tok, "output_tokens": out_tok}
+        if cached:
+            usage["cache_read_input_tokens"] = cached
+        return usage
+
+    if provider_name == "gemini":
+        cached = int(raw.get("cached_content_token_count") or 0)
+        usage = {"input_tokens": in_tok, "output_tokens": out_tok}
+        if cached:
+            usage["cache_read_input_tokens"] = cached
+        return usage
+
+    return {"input_tokens": in_tok, "output_tokens": out_tok}
+
+
 @router.post("/v1/messages")
 async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api_key)):
     provider_name = _detect_provider(request.model)
@@ -389,10 +491,7 @@ async def messages_create(request: AnthropicRequest, _: str = Depends(verify_api
         "content": [{"type": "text", "text": result.content}],
         "stop_reason": "end_turn",
         "stop_sequence": None,
-        "usage": {
-            "input_tokens": result.usage.input_tokens if result.usage else 0,
-            "output_tokens": result.usage.output_tokens if result.usage else 0,
-        },
+        "usage": _anthropic_usage(provider_name, result),
     }
 
 
@@ -404,6 +503,26 @@ class OAIResponseRequest(BaseModel):
     input: str = ""
     max_output_tokens: int = 512
     reasoning_effort: str = ""
+
+
+def _openai_responses_usage(provider_name: str, result: ChatResponse) -> dict:
+    """Build an OpenAI-standard /v1/responses usage object."""
+    raw = result.raw_usage or {}
+    in_tok = result.usage.input_tokens if result.usage else 0
+    out_tok = result.usage.output_tokens if result.usage else 0
+
+    if provider_name == "azure" and raw:
+        usage = dict(raw)
+        usage.setdefault("input_tokens", in_tok)
+        usage.setdefault("output_tokens", out_tok)
+        usage.setdefault("total_tokens", in_tok + out_tok)
+        return usage
+
+    return {
+        "input_tokens": in_tok,
+        "output_tokens": out_tok,
+        "total_tokens": in_tok + out_tok,
+    }
 
 
 @router.post("/v1/responses")
@@ -436,10 +555,7 @@ async def responses_create(request: OAIResponseRequest, _: str = Depends(verify_
             "type": "message",
             "content": [{"type": "output_text", "text": result.content}],
         }],
-        "usage": {
-            "input_tokens": result.usage.input_tokens if result.usage else 0,
-            "output_tokens": result.usage.output_tokens if result.usage else 0,
-        },
+        "usage": _openai_responses_usage(provider_name, result),
     }
 
 

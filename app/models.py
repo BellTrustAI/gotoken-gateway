@@ -67,6 +67,7 @@ class ChatResponse(BaseModel):
     content: str
     images: list[ImageOutput] | None = None
     usage: Usage | None = None
+    raw_usage: dict | None = None
 
 
 class ImageGenerateResponse(BaseModel):

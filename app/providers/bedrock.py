@@ -58,7 +58,7 @@ class BedrockProvider:
         content_blocks = response_body.get("content", [])
         text = "".join(block.get("text", "") for block in content_blocks if block.get("type") == "text")
 
-        usage_data = response_body.get("usage", {})
+        usage_data = response_body.get("usage", {}) or {}
         usage = Usage(
             input_tokens=usage_data.get("input_tokens", 0),
             output_tokens=usage_data.get("output_tokens", 0),
@@ -69,4 +69,5 @@ class BedrockProvider:
             model=request.model,
             content=text,
             usage=usage,
+            raw_usage=usage_data or None,
         )

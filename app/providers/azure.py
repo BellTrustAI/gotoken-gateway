@@ -128,6 +128,7 @@ class AzureFoundryProvider:
         )
 
         choice = response.choices[0]
+        raw_usage = _dump_usage(getattr(response, "usage", None))
         return ChatResponse(
             provider="azure",
             model=request.model,
@@ -136,6 +137,7 @@ class AzureFoundryProvider:
                 input_tokens=response.usage.prompt_tokens if response.usage else 0,
                 output_tokens=response.usage.completion_tokens if response.usage else 0,
             ),
+            raw_usage=raw_usage,
         )
 
     async def _chat_via_responses(self, request: ChatRequest) -> ChatResponse:
@@ -194,6 +196,7 @@ class AzureFoundryProvider:
                 input_tokens=response.usage.input_tokens if response.usage else 0,
                 output_tokens=response.usage.output_tokens if response.usage else 0,
             ),
+            raw_usage=_dump_usage(getattr(response, "usage", None)),
         )
 
     async def images(self, request: ImageGenerateRequest) -> ImageGenerateResponse:
